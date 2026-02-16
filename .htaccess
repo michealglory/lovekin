@@ -1,0 +1,5 @@
+# LoveKin plugin rewrite support (WordPress REST API handled by core)
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule ^wp-json/?$ index.php?rest_route=/ [L]
+</IfModule>

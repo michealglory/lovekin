@@ -1,0 +1,215 @@
+<?php
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+class LoveKin_Reports {
+	public static function init() {
+		add_action( 'admin_post_lk_update_remark', array( __CLASS__, 'handle_update_remark' ) );
+	}
+
+	public static function get_remark_for_score( $score ) {
+		$bands = get_option( 'lovekin_remark_bands', array() );
+		foreach ( $bands as $band ) {
+			$min = isset( $band['min'] ) ? (int) $band['min'] : 0;
+			$max = isset( $band['max'] ) ? (int) $band['max'] : 0;
+			if ( $score >= $min && $score <= $max ) {
+				return $band;
+			}
+		}
+		return array( 'label' => __( 'Progress', 'lovekin' ), 'remark' => __( 'Keep going!', 'lovekin' ), 'color' => '#3b82f6' );
+	}
+
+	public static function handle_update_remark() {
+		if ( ! current_user_can( 'lk_edit_remarks' ) && ! current_user_can( 'lk_view_all_reports' ) ) {
+			wp_die( esc_html__( 'Permission denied.', 'lovekin' ) );
+		}
+		check_admin_referer( 'lk_update_remark' );
+
+		$attempt_id  = isset( $_POST['attempt_id'] ) ? absint( $_POST['attempt_id'] ) : 0;
+		$remark_text = isset( $_POST['remark'] ) ? wp_kses_post( wp_unslash( $_POST['remark'] ) ) : '';
+
+		if ( $attempt_id ) {
+			global $wpdb;
+			$table = $wpdb->prefix . 'lk_attempts';
+			$wpdb->update(
+				$table,
+				array( 'remark' => $remark_text ),
+				array( 'id' => $attempt_id ),
+				array( '%s' ),
+				array( '%d' )
+			);
+		}
+
+		wp_safe_redirect( wp_get_referer() ? wp_get_referer() : admin_url( 'admin.php?page=lovekin-reports' ) );
+		exit;
+	}
+
+	public static function get_user_attempts( $user_id ) {
+		global $wpdb;
+		$table = $wpdb->prefix . 'lk_attempts';
+
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE user_id = %d ORDER BY created_at ASC",
+				$user_id
+			)
+		);
+	}
+
+	public static function render_admin_page() {
+		if ( ! current_user_can( 'lk_view_all_reports' ) ) {
+			wp_die( esc_html__( 'Permission denied.', 'lovekin' ) );
+		}
+
+		$users = get_users();
+		$selected_user = isset( $_GET['lk_user'] ) ? absint( $_GET['lk_user'] ) : 0;
+		?>
+		<div class="wrap lk-admin-page">
+			<h1><?php esc_html_e( 'Member Reports', 'lovekin' ); ?></h1>
+			<form method="get">
+				<input type="hidden" name="page" value="lovekin-reports" />
+				<select name="lk_user" class="widefat" style="max-width: 320px;">
+					<option value="0"><?php esc_html_e( 'Select a member', 'lovekin' ); ?></option>
+					<?php foreach ( $users as $user ) : ?>
+						<option value="<?php echo esc_attr( $user->ID ); ?>" <?php selected( $selected_user, $user->ID ); ?>><?php echo esc_html( $user->display_name ); ?></option>
+					<?php endforeach; ?>
+				</select>
+				<button type="submit" class="button button-primary"><?php esc_html_e( 'View Report', 'lovekin' ); ?></button>
+			</form>
+
+			<?php if ( $selected_user ) : ?>
+				<?php echo self::render_report_view( $selected_user, true ); ?>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	public static function render_report_view( $user_id, $is_admin = false ) {
+		$attempts = self::get_user_attempts( $user_id );
+		$averages = self::get_average_scores( $attempts );
+		$chart_data = wp_json_encode( self::get_chart_data( $attempts ) );
+
+		ob_start();
+		?>
+		<div class="lk-root lk-report" data-lk="report" data-lk-chart='<?php echo esc_attr( $chart_data ); ?>'>
+			<div class="lk-report-hero">
+				<div class="lk-hero-card">
+					<h3><?php esc_html_e( 'Average Score', 'lovekin' ); ?></h3>
+					<span class="lk-hero-value"><?php echo esc_html( number_format_i18n( $averages['overall'], 1 ) ); ?>%</span>
+				</div>
+				<div class="lk-hero-card">
+					<h3><?php esc_html_e( 'Assessments Taken', 'lovekin' ); ?></h3>
+					<span class="lk-hero-value"><?php echo esc_html( (int) $averages['count'] ); ?></span>
+				</div>
+				<div class="lk-hero-card">
+					<h3><?php esc_html_e( 'Recent Avg (5)', 'lovekin' ); ?></h3>
+					<span class="lk-hero-value"><?php echo esc_html( number_format_i18n( $averages['recent'], 1 ) ); ?>%</span>
+				</div>
+			</div>
+
+			<div class="lk-report-grid">
+				<div class="lk-card">
+					<h3><?php esc_html_e( 'Score Trend', 'lovekin' ); ?></h3>
+					<canvas class="lk-chart" data-lk="chart-line"></canvas>
+				</div>
+				<div class="lk-card">
+					<h3><?php esc_html_e( 'Score Distribution', 'lovekin' ); ?></h3>
+					<canvas class="lk-chart" data-lk="chart-bar"></canvas>
+				</div>
+			</div>
+
+			<div class="lk-card">
+				<h3><?php esc_html_e( 'Attempts', 'lovekin' ); ?></h3>
+				<table class="lk-table">
+					<thead>
+						<tr>
+							<th><?php esc_html_e( 'Course', 'lovekin' ); ?></th>
+							<th><?php esc_html_e( 'Score', 'lovekin' ); ?></th>
+							<th><?php esc_html_e( 'Date', 'lovekin' ); ?></th>
+							<th><?php esc_html_e( 'Remark', 'lovekin' ); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php if ( empty( $attempts ) ) : ?>
+							<tr><td colspan="4"><?php esc_html_e( 'No attempts recorded yet.', 'lovekin' ); ?></td></tr>
+						<?php else : ?>
+							<?php foreach ( array_reverse( $attempts ) as $attempt ) :
+								$course = get_post( $attempt->course_id );
+								$band   = self::get_remark_for_score( $attempt->score );
+								?>
+								<tr>
+									<td><?php echo esc_html( $course ? $course->post_title : __( 'Course', 'lovekin' ) ); ?></td>
+									<td><span class="lk-score-pill" style="--lk-score-color: <?php echo esc_attr( $band['color'] ); ?>;"><?php echo esc_html( number_format_i18n( $attempt->score, 1 ) ); ?>%</span></td>
+									<td><?php echo esc_html( mysql2date( 'M j, Y', $attempt->created_at ) ); ?></td>
+									<td>
+										<?php if ( $is_admin ) : ?>
+											<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="lk-remark-form">
+												<input type="hidden" name="action" value="lk_update_remark" />
+												<input type="hidden" name="attempt_id" value="<?php echo esc_attr( $attempt->id ); ?>" />
+												<?php wp_nonce_field( 'lk_update_remark' ); ?>
+												<textarea name="remark" rows="2" class="lk-input"><?php echo esc_textarea( $attempt->remark ? $attempt->remark : $band['remark'] ); ?></textarea>
+												<button type="submit" class="lk-button lk-button--ghost"><?php esc_html_e( 'Save', 'lovekin' ); ?></button>
+											</form>
+										<?php else : ?>
+											<?php echo esc_html( $attempt->remark ? $attempt->remark : $band['remark'] ); ?>
+										<?php endif; ?>
+									</td>
+								</tr>
+							<?php endforeach; ?>
+						<?php endif; ?>
+					</tbody>
+				</table>
+			</div>
+		</div>
+		<?php
+		return ob_get_clean();
+	}
+
+	private static function get_average_scores( $attempts ) {
+		$count = count( $attempts );
+		if ( 0 === $count ) {
+			return array( 'overall' => 0, 'recent' => 0, 'count' => 0 );
+		}
+		$total = 0;
+		foreach ( $attempts as $attempt ) {
+			$total += (float) $attempt->score;
+		}
+		$recent_attempts = array_slice( $attempts, -5 );
+		$recent_total = 0;
+		foreach ( $recent_attempts as $attempt ) {
+			$recent_total += (float) $attempt->score;
+		}
+
+		return array(
+			'overall' => $total / $count,
+			'recent'  => $recent_total / max( 1, count( $recent_attempts ) ),
+			'count'   => $count,
+		);
+	}
+
+	private static function get_chart_data( $attempts ) {
+		$labels = array();
+		$series = array();
+		$distribution = array( '0-49' => 0, '50-74' => 0, '75-100' => 0 );
+
+		foreach ( $attempts as $attempt ) {
+			$labels[] = mysql2date( 'M j', $attempt->created_at );
+			$series[] = (float) $attempt->score;
+			if ( $attempt->score < 50 ) {
+				$distribution['0-49']++;
+			} elseif ( $attempt->score < 75 ) {
+				$distribution['50-74']++;
+			} else {
+				$distribution['75-100']++;
+			}
+		}
+
+		return array(
+			'labels'       => $labels,
+			'series'       => $series,
+			'distribution' => $distribution,
+		);
+	}
+}
