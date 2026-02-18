@@ -13,6 +13,8 @@ class LoveKin_CPT_Assessment {
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_admin_assets' ) );
 		add_action( 'rest_api_init', array( __CLASS__, 'register_meta' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'admin_notice' ) );
+		add_filter( 'manage_lk_assessment_posts_columns', array( __CLASS__, 'add_columns' ) );
+		add_action( 'manage_lk_assessment_posts_custom_column', array( __CLASS__, 'render_columns' ), 10, 2 );
 	}
 
 	public static function register() {
@@ -48,9 +50,13 @@ class LoveKin_CPT_Assessment {
 					'read_post'          => 'read_lk_assessment',
 					'delete_post'        => 'delete_lk_assessment',
 					'edit_posts'         => 'edit_lk_assessments',
+					'delete_posts'       => 'delete_lk_assessments',
 					'edit_others_posts'  => 'edit_others_lk_assessments',
 					'edit_published_posts' => 'edit_published_lk_assessments',
 					'edit_private_posts' => 'edit_private_lk_assessments',
+					'delete_others_posts' => 'delete_others_lk_assessments',
+					'delete_published_posts' => 'delete_published_lk_assessments',
+					'delete_private_posts' => 'delete_private_lk_assessments',
 					'publish_posts'      => 'publish_lk_assessments',
 					'read_private_posts' => 'read_private_lk_assessments',
 				),
@@ -264,5 +270,29 @@ class LoveKin_CPT_Assessment {
 			delete_transient( 'lk_assessment_notice' );
 			printf( '<div class="notice notice-warning"><p>%s</p></div>', esc_html( $notice ) );
 		}
+	}
+
+	public static function add_columns( $columns ) {
+		$updated = array();
+		foreach ( $columns as $key => $label ) {
+			$updated[ $key ] = $label;
+			if ( 'title' === $key ) {
+				$updated['lk_course'] = __( 'Linked Course', 'lovekin' );
+			}
+		}
+		return $updated;
+	}
+
+	public static function render_columns( $column, $post_id ) {
+		if ( 'lk_course' !== $column ) {
+			return;
+		}
+		$course_id = (int) get_post_meta( $post_id, '_lk_course_id', true );
+		if ( ! $course_id ) {
+			echo esc_html__( '-', 'lovekin' );
+			return;
+		}
+		$course = get_post( $course_id );
+		echo esc_html( $course ? $course->post_title : __( 'Course', 'lovekin' ) );
 	}
 }

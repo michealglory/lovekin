@@ -28,7 +28,7 @@ class LoveKin_Plugin {
 	}
 
 	private function init() {
-		add_action( 'plugins_loaded', array( $this, 'load_textdomain' ) );
+		add_action( 'init', array( $this, 'load_textdomain' ) );
 
 		require_once LOVEKIN_PLUGIN_DIR . 'includes/class-lovekin-roles.php';
 		require_once LOVEKIN_PLUGIN_DIR . 'includes/class-lovekin-cpt-course.php';
@@ -42,6 +42,8 @@ class LoveKin_Plugin {
 		require_once LOVEKIN_PLUGIN_DIR . 'includes/class-lovekin-archive.php';
 		require_once LOVEKIN_PLUGIN_DIR . 'includes/class-lovekin-settings.php';
 		require_once LOVEKIN_PLUGIN_DIR . 'includes/class-lovekin-shortcodes.php';
+
+		add_action( 'init', array( 'LoveKin_Activator', 'maybe_upgrade' ), 20 );
 
 		LoveKin_Roles::init();
 		LoveKin_CPT_Course::init();

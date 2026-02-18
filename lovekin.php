@@ -13,11 +13,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'LOVEKIN_VERSION' ) ) {
-	define( 'LOVEKIN_VERSION', '1.0.0' );
+	define( 'LOVEKIN_VERSION', '1.1.0' );
 }
 
 if ( ! defined( 'LOVEKIN_DB_VERSION' ) ) {
-	define( 'LOVEKIN_DB_VERSION', '1.0.0' );
+	define( 'LOVEKIN_DB_VERSION', '1.1.0' );
 }
 
 if ( ! defined( 'LOVEKIN_PLUGIN_FILE' ) ) {
