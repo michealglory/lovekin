@@ -66,18 +66,21 @@ class LoveKin_Reports {
 		$users = get_users();
 		$selected_user = isset( $_GET['lk_user'] ) ? absint( $_GET['lk_user'] ) : 0;
 		?>
-		<div class="wrap lk-admin-page">
+		<div class="wrap lk-admin-page lk-admin-report-page">
 			<h1><?php esc_html_e( 'Member Reports', 'lovekin' ); ?></h1>
-			<form method="get">
-				<input type="hidden" name="page" value="lovekin-reports" />
-				<select name="lk_user" class="widefat" style="max-width: 320px;">
-					<option value="0"><?php esc_html_e( 'Select a member', 'lovekin' ); ?></option>
-					<?php foreach ( $users as $user ) : ?>
-						<option value="<?php echo esc_attr( $user->ID ); ?>" <?php selected( $selected_user, $user->ID ); ?>><?php echo esc_html( $user->display_name ); ?></option>
-					<?php endforeach; ?>
-				</select>
-				<button type="submit" class="button button-primary"><?php esc_html_e( 'View Report', 'lovekin' ); ?></button>
-			</form>
+			<div class="lk-admin-card">
+				<form method="get" class="lk-admin-report-form">
+					<input type="hidden" name="page" value="lovekin-reports" />
+					<label class="lk-admin-label"><?php esc_html_e( 'Member', 'lovekin' ); ?></label>
+					<select name="lk_user" class="widefat" style="max-width: 320px;">
+						<option value="0"><?php esc_html_e( 'Select a member', 'lovekin' ); ?></option>
+						<?php foreach ( $users as $user ) : ?>
+							<option value="<?php echo esc_attr( $user->ID ); ?>" <?php selected( $selected_user, $user->ID ); ?>><?php echo esc_html( $user->display_name ); ?></option>
+						<?php endforeach; ?>
+					</select>
+					<button type="submit" class="button button-primary"><?php esc_html_e( 'View Report', 'lovekin' ); ?></button>
+				</form>
+			</div>
 
 			<?php if ( $selected_user ) : ?>
 				<?php echo self::render_report_view( $selected_user, true ); ?>
@@ -90,22 +93,69 @@ class LoveKin_Reports {
 		$attempts = self::get_user_attempts( $user_id );
 		$averages = self::get_average_scores( $attempts );
 		$chart_data = wp_json_encode( self::get_chart_data( $attempts ) );
+		$attempts_payload = array();
+		$course_options = array();
+		foreach ( $attempts as $attempt ) {
+			$course = get_post( $attempt->course_id );
+			$course_title = $course ? $course->post_title : __( 'Course', 'lovekin' );
+			$course_options[ $attempt->course_id ] = $course_title;
+			$attempts_payload[] = array(
+				'id'           => (int) $attempt->id,
+				'score'        => (float) $attempt->score,
+				'timestamp'    => strtotime( $attempt->created_at ),
+				'date'         => mysql2date( 'M j, Y', $attempt->created_at ),
+				'course_id'    => (int) $attempt->course_id,
+				'course_title' => $course_title,
+			);
+		}
+		$attempts_json = wp_json_encode( $attempts_payload );
+		$trend = self::get_trend_delta( $attempts );
+		$trend_class = $trend >= 0 ? 'lk-trend--up' : 'lk-trend--down';
 
 		ob_start();
 		?>
-		<div class="lk-root lk-report" data-lk="report" data-lk-chart='<?php echo esc_attr( $chart_data ); ?>'>
+		<div class="lk-root lk-report" data-lk="report" data-lk-chart='<?php echo esc_attr( $chart_data ); ?>' data-lk-attempts='<?php echo esc_attr( $attempts_json ); ?>'>
+			<div class="lk-report-filters">
+				<div class="lk-field">
+					<label><?php esc_html_e( 'Course', 'lovekin' ); ?></label>
+					<select data-lk="report-course">
+						<option value="all"><?php esc_html_e( 'All Courses', 'lovekin' ); ?></option>
+						<?php foreach ( $course_options as $course_id => $course_title ) : ?>
+							<option value="<?php echo esc_attr( $course_id ); ?>"><?php echo esc_html( $course_title ); ?></option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+				<div class="lk-field">
+					<label><?php esc_html_e( 'Date Range', 'lovekin' ); ?></label>
+					<select data-lk="report-range">
+						<option value="30"><?php esc_html_e( 'Last 30 days', 'lovekin' ); ?></option>
+						<option value="90"><?php esc_html_e( 'Last 90 days', 'lovekin' ); ?></option>
+						<option value="180"><?php esc_html_e( 'Last 180 days', 'lovekin' ); ?></option>
+						<option value="all" selected><?php esc_html_e( 'All time', 'lovekin' ); ?></option>
+					</select>
+				</div>
+			</div>
+
 			<div class="lk-report-hero">
 				<div class="lk-hero-card">
 					<h3><?php esc_html_e( 'Average Score', 'lovekin' ); ?></h3>
-					<span class="lk-hero-value"><?php echo esc_html( number_format_i18n( $averages['overall'], 1 ) ); ?>%</span>
+					<span class="lk-hero-value" data-lk="hero-average"><?php echo esc_html( number_format_i18n( $averages['overall'], 1 ) ); ?>%</span>
+					<span class="lk-trend <?php echo esc_attr( $trend_class ); ?>">
+						<?php
+						printf(
+							esc_html__( '%s%% vs previous 3', 'lovekin' ),
+							number_format_i18n( $trend, 1 )
+						);
+						?>
+					</span>
 				</div>
 				<div class="lk-hero-card">
 					<h3><?php esc_html_e( 'Assessments Taken', 'lovekin' ); ?></h3>
-					<span class="lk-hero-value"><?php echo esc_html( (int) $averages['count'] ); ?></span>
+					<span class="lk-hero-value" data-lk="hero-count"><?php echo esc_html( (int) $averages['count'] ); ?></span>
 				</div>
 				<div class="lk-hero-card">
 					<h3><?php esc_html_e( 'Recent Avg (5)', 'lovekin' ); ?></h3>
-					<span class="lk-hero-value"><?php echo esc_html( number_format_i18n( $averages['recent'], 1 ) ); ?>%</span>
+					<span class="lk-hero-value" data-lk="hero-recent"><?php echo esc_html( number_format_i18n( $averages['recent'], 1 ) ); ?>%</span>
 				</div>
 			</div>
 
@@ -139,7 +189,7 @@ class LoveKin_Reports {
 								$course = get_post( $attempt->course_id );
 								$band   = self::get_remark_for_score( $attempt->score );
 								?>
-								<tr>
+								<tr data-course="<?php echo esc_attr( $attempt->course_id ); ?>" data-score="<?php echo esc_attr( $attempt->score ); ?>" data-timestamp="<?php echo esc_attr( strtotime( $attempt->created_at ) ); ?>">
 									<td><?php echo esc_html( $course ? $course->post_title : __( 'Course', 'lovekin' ) ); ?></td>
 									<td><span class="lk-score-pill" style="--lk-score-color: <?php echo esc_attr( $band['color'] ); ?>;"><?php echo esc_html( number_format_i18n( $attempt->score, 1 ) ); ?>%</span></td>
 									<td><?php echo esc_html( mysql2date( 'M j, Y', $attempt->created_at ) ); ?></td>
@@ -211,5 +261,24 @@ class LoveKin_Reports {
 			'series'       => $series,
 			'distribution' => $distribution,
 		);
+	}
+
+	private static function get_trend_delta( $attempts ) {
+		$recent = array_slice( $attempts, -3 );
+		$previous = array_slice( $attempts, -6, 3 );
+		if ( empty( $recent ) || empty( $previous ) ) {
+			return 0;
+		}
+		$recent_total = 0;
+		foreach ( $recent as $attempt ) {
+			$recent_total += (float) $attempt->score;
+		}
+		$previous_total = 0;
+		foreach ( $previous as $attempt ) {
+			$previous_total += (float) $attempt->score;
+		}
+		$recent_avg = $recent_total / count( $recent );
+		$previous_avg = $previous_total / count( $previous );
+		return $recent_avg - $previous_avg;
 	}
 }

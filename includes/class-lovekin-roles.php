@@ -13,8 +13,21 @@ class LoveKin_Roles {
 		$primary_caps   = self::primary_caps();
 		$secondary_caps = self::secondary_caps();
 
-		add_role( 'lk_primary', __( 'Primary Member', 'lovekin' ), $primary_caps );
-		add_role( 'lk_secondary', __( 'Secondary Member', 'lovekin' ), $secondary_caps );
+		$primary_role = add_role( 'lk_primary', __( 'Primary Member', 'lovekin' ), $primary_caps );
+		if ( ! $primary_role ) {
+			$primary_role = get_role( 'lk_primary' );
+		}
+		if ( $primary_role ) {
+			self::sync_caps( $primary_role, $primary_caps );
+		}
+
+		$secondary_role = add_role( 'lk_secondary', __( 'Secondary Member', 'lovekin' ), $secondary_caps );
+		if ( ! $secondary_role ) {
+			$secondary_role = get_role( 'lk_secondary' );
+		}
+		if ( $secondary_role ) {
+			self::sync_caps( $secondary_role, $secondary_caps );
+		}
 
 		$admin_role = get_role( 'administrator' );
 		if ( $admin_role ) {
@@ -28,6 +41,7 @@ class LoveKin_Roles {
 	private static function base_caps() {
 		return array(
 			'read'               => true,
+			'upload_files'       => true,
 			'lk_view_dashboard'  => true,
 			'lk_take_assessments'=> true,
 			'lk_view_reports'    => true,
@@ -66,20 +80,36 @@ class LoveKin_Roles {
 			'read_lk_course'           => true,
 			'delete_lk_course'         => true,
 			'edit_lk_courses'          => true,
+			'delete_lk_courses'        => true,
 			'edit_others_lk_courses'   => true,
 			'edit_published_lk_courses'=> true,
 			'edit_private_lk_courses'  => true,
+			'delete_others_lk_courses' => true,
+			'delete_published_lk_courses' => true,
+			'delete_private_lk_courses' => true,
 			'publish_lk_courses'       => true,
 			'read_private_lk_courses'  => true,
 			'edit_lk_assessment'       => true,
 			'read_lk_assessment'       => true,
 			'delete_lk_assessment'     => true,
 			'edit_lk_assessments'      => true,
+			'delete_lk_assessments'    => true,
 			'edit_others_lk_assessments'=> true,
 			'edit_published_lk_assessments'=> true,
 			'edit_private_lk_assessments'  => true,
+			'delete_others_lk_assessments' => true,
+			'delete_published_lk_assessments' => true,
+			'delete_private_lk_assessments' => true,
 			'publish_lk_assessments'   => true,
 			'read_private_lk_assessments'=> true,
 		);
+	}
+
+	private static function sync_caps( $role, $caps ) {
+		foreach ( $caps as $cap => $grant ) {
+			if ( $grant ) {
+				$role->add_cap( $cap, true );
+			}
+		}
 	}
 }

@@ -29,6 +29,7 @@ class LoveKin_Admin_Menus {
 		add_submenu_page( 'lovekin', __( 'Funding Requests', 'lovekin' ), __( 'Funding Requests', 'lovekin' ), 'lk_review_funding', 'lovekin-funding', array( 'LoveKin_Funding', 'render_admin_page' ) );
 		add_submenu_page( 'lovekin', __( 'Documents', 'lovekin' ), __( 'Documents', 'lovekin' ), 'lk_upload_documents', 'lovekin-documents', array( 'LoveKin_Documents', 'render_admin_page' ) );
 		add_submenu_page( 'lovekin', __( 'Settings', 'lovekin' ), __( 'Settings', 'lovekin' ), 'lk_manage_settings', 'lovekin-settings', array( 'LoveKin_Settings', 'render_admin_page' ) );
+		add_submenu_page( 'lovekin', __( 'Tools', 'lovekin' ), __( 'Tools', 'lovekin' ), 'manage_options', 'lovekin-tools', array( 'LoveKin_Tools', 'render_admin_page' ) );
 	}
 
 	public static function render_dashboard() {
@@ -186,5 +187,11 @@ class LoveKin_Admin_Menus {
 		wp_enqueue_style( 'lovekin-admin', LOVEKIN_PLUGIN_URL . 'assets/css/lovekin-admin.css', array(), LOVEKIN_VERSION );
 		wp_enqueue_script( 'lovekin-admin', LOVEKIN_PLUGIN_URL . 'assets/js/lovekin-admin.js', array( 'jquery' ), LOVEKIN_VERSION, true );
 		wp_enqueue_script( 'lovekin-chart', 'https://cdn.jsdelivr.net/npm/chart.js', array(), LOVEKIN_VERSION, true );
+
+		if ( 'lovekin_page_lovekin-reports' === $hook ) {
+			wp_enqueue_style( 'dashicons' );
+			wp_enqueue_style( 'lovekin-public', LOVEKIN_PLUGIN_URL . 'assets/css/lovekin-public.css', array(), LOVEKIN_VERSION );
+			wp_enqueue_script( 'lovekin-public', LOVEKIN_PLUGIN_URL . 'assets/js/lovekin-public.js', array( 'jquery' ), LOVEKIN_VERSION, true );
+		}
 	}
 }

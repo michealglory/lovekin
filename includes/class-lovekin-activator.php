@@ -56,6 +56,7 @@ class LoveKin_Activator {
 			amount decimal(12,2) NOT NULL DEFAULT 0.00,
 			account_details text NOT NULL,
 			membership_code varchar(100) NOT NULL,
+			supporting_file text NULL,
 			status varchar(20) NOT NULL DEFAULT 'pending',
 			admin_notes text NULL,
 			created_at datetime NOT NULL,
@@ -150,6 +151,16 @@ class LoveKin_Activator {
 	}
 
 	/**
+	 * Run lightweight upgrade when DB version changes.
+	 */
+	public static function maybe_upgrade() {
+		$stored_version = get_option( 'lovekin_db_version', '0' );
+		if ( version_compare( $stored_version, LOVEKIN_DB_VERSION, '<' ) ) {
+			self::activate();
+		}
+	}
+
+	/**
 	 * Ensure secure uploads directory exists.
 	 */
 	private static function ensure_secure_uploads() {
@@ -159,7 +170,7 @@ class LoveKin_Activator {
 		}
 
 		$htaccess_path = $uploads_dir . '.htaccess';
-		if ( ! file_exists( $htaccess_path ) ) {
+		if ( ! file_exists( $htaccess_path ) && is_writable( $uploads_dir ) ) {
 			$rules = "Options -Indexes\n<FilesMatch \"\\.(php|php\\d|phtml)$\">\nDeny from all\n</FilesMatch>\n";
 			file_put_contents( $htaccess_path, $rules );
 		}
