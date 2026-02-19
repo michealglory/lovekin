@@ -94,4 +94,26 @@ jQuery(function ($) {
 			});
 		}
 	}
+
+	$('[data-lk="course-file-select"]').on('click', function () {
+		if (typeof wp === 'undefined' || !wp.media) {
+			return;
+		}
+		var $button = $(this);
+		var $input = $button.closest('.inside').find('input[name="lk_course_file_url"]');
+		var frame = wp.media({
+			title: 'Select course file',
+			button: { text: 'Use this file' },
+			multiple: false
+		});
+
+		frame.on('select', function () {
+			var attachment = frame.state().get('selection').first();
+			if (attachment) {
+				$input.val(attachment.get('url'));
+			}
+		});
+
+		frame.open();
+	});
 });

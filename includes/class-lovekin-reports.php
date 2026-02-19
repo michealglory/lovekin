@@ -66,18 +66,21 @@ class LoveKin_Reports {
 		$users = get_users();
 		$selected_user = isset( $_GET['lk_user'] ) ? absint( $_GET['lk_user'] ) : 0;
 		?>
-		<div class="wrap lk-admin-page">
+		<div class="wrap lk-admin-page lk-admin-report-page">
 			<h1><?php esc_html_e( 'Member Reports', 'lovekin' ); ?></h1>
-			<form method="get">
-				<input type="hidden" name="page" value="lovekin-reports" />
-				<select name="lk_user" class="widefat" style="max-width: 320px;">
-					<option value="0"><?php esc_html_e( 'Select a member', 'lovekin' ); ?></option>
-					<?php foreach ( $users as $user ) : ?>
-						<option value="<?php echo esc_attr( $user->ID ); ?>" <?php selected( $selected_user, $user->ID ); ?>><?php echo esc_html( $user->display_name ); ?></option>
-					<?php endforeach; ?>
-				</select>
-				<button type="submit" class="button button-primary"><?php esc_html_e( 'View Report', 'lovekin' ); ?></button>
-			</form>
+			<div class="lk-admin-card">
+				<form method="get" class="lk-admin-report-form">
+					<input type="hidden" name="page" value="lovekin-reports" />
+					<label class="lk-admin-label"><?php esc_html_e( 'Member', 'lovekin' ); ?></label>
+					<select name="lk_user" class="widefat" style="max-width: 320px;">
+						<option value="0"><?php esc_html_e( 'Select a member', 'lovekin' ); ?></option>
+						<?php foreach ( $users as $user ) : ?>
+							<option value="<?php echo esc_attr( $user->ID ); ?>" <?php selected( $selected_user, $user->ID ); ?>><?php echo esc_html( $user->display_name ); ?></option>
+						<?php endforeach; ?>
+					</select>
+					<button type="submit" class="button button-primary"><?php esc_html_e( 'View Report', 'lovekin' ); ?></button>
+				</form>
+			</div>
 
 			<?php if ( $selected_user ) : ?>
 				<?php echo self::render_report_view( $selected_user, true ); ?>
@@ -131,10 +134,6 @@ class LoveKin_Reports {
 						<option value="all" selected><?php esc_html_e( 'All time', 'lovekin' ); ?></option>
 					</select>
 				</div>
-				<div class="lk-field">
-					<label>&nbsp;</label>
-					<button type="button" class="lk-button lk-button--ghost" disabled><?php esc_html_e( 'Download Summary (PDF)', 'lovekin' ); ?></button>
-				</div>
 			</div>
 
 			<div class="lk-report-hero">
@@ -169,34 +168,6 @@ class LoveKin_Reports {
 					<h3><?php esc_html_e( 'Score Distribution', 'lovekin' ); ?></h3>
 					<canvas class="lk-chart" data-lk="chart-bar"></canvas>
 				</div>
-			</div>
-
-			<div class="lk-card">
-				<h3><?php esc_html_e( 'Progress Timeline', 'lovekin' ); ?></h3>
-				<ul class="lk-timeline">
-					<?php
-					$timeline_attempts = array_slice( array_reverse( $attempts ), 0, 6 );
-					if ( empty( $timeline_attempts ) ) :
-						?>
-						<li class="lk-empty"><?php esc_html_e( 'No progress to display yet.', 'lovekin' ); ?></li>
-					<?php else : ?>
-						<?php foreach ( $timeline_attempts as $attempt ) :
-							$course = get_post( $attempt->course_id );
-							$band   = self::get_remark_for_score( $attempt->score );
-							?>
-							<li>
-								<span class="lk-timeline-dot" style="background: <?php echo esc_attr( $band['color'] ); ?>;"></span>
-								<div>
-									<strong><?php echo esc_html( $course ? $course->post_title : __( 'Course', 'lovekin' ) ); ?></strong>
-									<span class="lk-meta"><?php echo esc_html( mysql2date( 'M j, Y', $attempt->created_at ) ); ?></span>
-								</div>
-								<span class="lk-score-pill" style="--lk-score-color: <?php echo esc_attr( $band['color'] ); ?>;">
-									<?php echo esc_html( number_format_i18n( $attempt->score, 1 ) ); ?>%
-								</span>
-							</li>
-						<?php endforeach; ?>
-					<?php endif; ?>
-				</ul>
 			</div>
 
 			<div class="lk-card">

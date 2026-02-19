@@ -219,19 +219,66 @@ jQuery(function ($) {
 
 			if (step === 3) {
 				$form.find('[data-lk-review="format"]').text($form.find('select[name="format"] option:selected').text());
-				$form.find('[data-lk-review="amount"]').text($form.find('input[name="amount"]').val() || '--');
+				var amount = $form.find('input[name="amount"]').val();
+				$form.find('[data-lk-review="amount"]').text(amount ? '\u20A6' + amount : '--');
 				$form.find('[data-lk-review="purpose"]').text($form.find('textarea[name="purpose"]').val() || '--');
-				$form.find('[data-lk-review="account_details"]').text($form.find('textarea[name="account_details"]').val() || '--');
+				$form.find('[data-lk-review="account_name"]').text($form.find('input[name="account_name"]').val() || '--');
+				$form.find('[data-lk-review="account_number"]').text($form.find('input[name="account_number"]').val() || '--');
+				$form.find('[data-lk-review="bank_name"]').text($form.find('input[name="bank_name"]').val() || '--');
 			}
 		}
 
+		function showError(message, $fields) {
+			var $error = $form.prev('[data-lk="form-error"]');
+			if ($error.length) {
+				$error.text(message).show();
+			}
+			$form.find('.is-invalid').removeClass('is-invalid');
+			if ($fields && $fields.length) {
+				$fields.addClass('is-invalid');
+				$fields.each(function () {
+					var $field = $(this);
+					var $group = $field.closest('.lk-input-group');
+					if ($group.length) {
+						$group.addClass('is-invalid');
+					}
+				});
+			}
+		}
+
+		function clearError() {
+			var $error = $form.prev('[data-lk="form-error"]');
+			if ($error.length) {
+				$error.hide().text('');
+			}
+			$form.find('.is-invalid').removeClass('is-invalid');
+		}
+
 		$form.on('click', '[data-lk="next-step"]', function () {
+			clearError();
+			if (currentStep === 1) {
+				var $required = $form.find('.lk-step-panel[data-step="1"]').find('select[name="format"], input[name="amount"]');
+				var missing = $required.filter(function () { return !$(this).val(); });
+				if (missing.length) {
+					showError('Please complete all required fields before continuing.', missing);
+					return;
+				}
+			}
+			if (currentStep === 2) {
+				var $requiredStep2 = $form.find('.lk-step-panel[data-step="2"]').find('textarea[name="purpose"], input[name="account_name"], input[name="account_number"], input[name="bank_name"]');
+				var missingStep2 = $requiredStep2.filter(function () { return !$(this).val(); });
+				if (missingStep2.length) {
+					showError('Please complete all required fields before continuing.', missingStep2);
+					return;
+				}
+			}
 			if (currentStep < 3) {
 				setStep(currentStep + 1);
 			}
 		});
 
 		$form.on('click', '[data-lk="prev-step"]', function () {
+			clearError();
 			if (currentStep > 1) {
 				setStep(currentStep - 1);
 			}

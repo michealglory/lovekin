@@ -28,6 +28,12 @@ class LoveKin_Shortcodes {
 				return $plugin_template;
 			}
 		}
+		if ( is_singular( 'lk_course' ) ) {
+			$plugin_template = LOVEKIN_PLUGIN_DIR . 'templates/single-lk_course.php';
+			if ( file_exists( $plugin_template ) ) {
+				return $plugin_template;
+			}
+		}
 		return $template;
 	}
 
@@ -103,6 +109,7 @@ class LoveKin_Shortcodes {
 		if ( $page_url && 0 !== strpos( $page_url, 'http' ) ) {
 			$page_url = home_url( $page_url );
 		}
+		$base_url = remove_query_arg( array( 'lk_profile', 'lk_funding', 'lk_archive', 'lk_course', 'lk_user', 'lk_result' ), $page_url );
 
 		ob_start();
 		?>
@@ -113,8 +120,8 @@ class LoveKin_Shortcodes {
 					<h2 class="lk-title"><?php echo esc_html( $user->display_name ); ?></h2>
 				</div>
 				<div class="lk-quick-actions">
-					<a class="lk-button" href="<?php echo esc_url( add_query_arg( 'lk_tab', 'courses' ) ); ?>"><?php esc_html_e( 'Explore Courses', 'lovekin' ); ?></a>
-					<a class="lk-button lk-button--ghost" href="<?php echo esc_url( add_query_arg( 'lk_tab', 'reports' ) ); ?>"><?php esc_html_e( 'View Reports', 'lovekin' ); ?></a>
+					<a class="lk-button" href="<?php echo esc_url( add_query_arg( 'lk_tab', 'courses', $base_url ) ); ?>"><?php esc_html_e( 'Explore Courses', 'lovekin' ); ?></a>
+					<a class="lk-button lk-button--ghost" href="<?php echo esc_url( add_query_arg( 'lk_tab', 'reports', $base_url ) ); ?>"><?php esc_html_e( 'View Reports', 'lovekin' ); ?></a>
 				</div>
 			</div>
 
@@ -131,7 +138,7 @@ class LoveKin_Shortcodes {
 				);
 				foreach ( $tabs as $key => $label ) :
 					?>
-					<a class="lk-tab <?php echo $tab === $key ? 'is-active' : ''; ?>" href="<?php echo esc_url( add_query_arg( 'lk_tab', $key ) ); ?>" data-lk="tab" data-tab="<?php echo esc_attr( $key ); ?>">
+					<a class="lk-tab <?php echo $tab === $key ? 'is-active' : ''; ?>" href="<?php echo esc_url( add_query_arg( 'lk_tab', $key, $base_url ) ); ?>" data-lk="tab" data-tab="<?php echo esc_attr( $key ); ?>">
 						<?php echo esc_html( $label ); ?>
 					</a>
 				<?php endforeach; ?>
@@ -441,8 +448,8 @@ class LoveKin_Shortcodes {
 		$user_id = get_current_user_id();
 		$user    = get_user_by( 'id', $user_id );
 		$membership_code = get_user_meta( $user_id, 'lk_membership_code', true );
-		if ( ! $membership_code ) {
-			$membership_code = 'LK-' . $user_id . '-' . wp_rand( 1000, 9999 );
+		if ( ! $membership_code || false !== strpos( $membership_code, '-' ) ) {
+			$membership_code = 'LK' . $user_id . wp_rand( 1000, 9999 );
 			update_user_meta( $user_id, 'lk_membership_code', $membership_code );
 		}
 		$occupation = get_user_meta( $user_id, 'lk_occupation', true );
@@ -462,10 +469,13 @@ class LoveKin_Shortcodes {
 		$profile_latest = LoveKin_Assessments::get_latest_score_for_user( $user_id );
 
 		ob_start();
-		$profile_notice = isset( $_GET['lk_profile'] ) ? sanitize_text_field( wp_unslash( $_GET['lk_profile'] ) ) : '';
+		$profile_notice = get_transient( 'lk_profile_updated_' . $user_id );
+		if ( $profile_notice ) {
+			delete_transient( 'lk_profile_updated_' . $user_id );
+		}
 		?>
 		<div class="lk-root lk-profile" data-lk="profile">
-			<?php if ( 'updated' === $profile_notice ) : ?>
+			<?php if ( $profile_notice ) : ?>
 				<div class="lk-alert lk-alert--success"><?php esc_html_e( 'Profile updated successfully.', 'lovekin' ); ?></div>
 			<?php endif; ?>
 			<div class="lk-profile-grid">
@@ -518,10 +528,6 @@ class LoveKin_Shortcodes {
 
 						<div class="lk-field-grid">
 							<div class="lk-field">
-								<label><?php esc_html_e( 'Membership Code', 'lovekin' ); ?></label>
-								<input type="text" name="membership_code" value="<?php echo esc_attr( $membership_code ); ?>" />
-							</div>
-							<div class="lk-field">
 								<label><?php esc_html_e( 'Email', 'lovekin' ); ?></label>
 								<input type="email" value="<?php echo esc_attr( $user->user_email ); ?>" disabled />
 							</div>
@@ -571,18 +577,16 @@ class LoveKin_Shortcodes {
 			}
 		}
 
-		$membership_code = isset( $_POST['membership_code'] ) ? sanitize_text_field( wp_unslash( $_POST['membership_code'] ) ) : '';
 		$occupation      = isset( $_POST['occupation'] ) ? sanitize_text_field( wp_unslash( $_POST['occupation'] ) ) : '';
 		$position        = isset( $_POST['position'] ) ? sanitize_text_field( wp_unslash( $_POST['position'] ) ) : '';
 
-		if ( $membership_code ) {
-			update_user_meta( $user_id, 'lk_membership_code', $membership_code );
-		}
 		update_user_meta( $user_id, 'lk_occupation', $occupation );
 		update_user_meta( $user_id, 'lk_org_chart_position', $position );
 
+		set_transient( 'lk_profile_updated_' . $user_id, 1, 30 );
 		$redirect = wp_get_referer() ? wp_get_referer() : home_url();
-		wp_safe_redirect( add_query_arg( array( 'lk_profile' => 'updated' ), $redirect ) );
+		$redirect = remove_query_arg( array( 'lk_profile' ), $redirect );
+		wp_safe_redirect( $redirect );
 		exit;
 	}
 
@@ -746,6 +750,10 @@ class LoveKin_Shortcodes {
 
 		$user = wp_get_current_user();
 		$membership_code = get_user_meta( $user->ID, 'lk_membership_code', true );
+		if ( ! $membership_code || false !== strpos( $membership_code, '-' ) ) {
+			$membership_code = 'LK' . $user->ID . wp_rand( 1000, 9999 );
+			update_user_meta( $user->ID, 'lk_membership_code', $membership_code );
+		}
 		$requests = LoveKin_Funding::get_user_requests( $user->ID );
 		$funding_notice = isset( $_GET['lk_funding'] ) ? sanitize_text_field( wp_unslash( $_GET['lk_funding'] ) ) : '';
 
@@ -755,6 +763,8 @@ class LoveKin_Shortcodes {
 			<?php if ( $funding_notice ) : ?>
 				<?php if ( 'submitted' === $funding_notice ) : ?>
 					<div class="lk-alert lk-alert--success"><?php esc_html_e( 'Funding request submitted successfully.', 'lovekin' ); ?></div>
+				<?php elseif ( 'missing' === $funding_notice ) : ?>
+					<div class="lk-alert lk-alert--error"><?php esc_html_e( 'Please complete all required fields before submitting.', 'lovekin' ); ?></div>
 				<?php elseif ( 'type' === $funding_notice ) : ?>
 					<div class="lk-alert lk-alert--error"><?php esc_html_e( 'Unsupported file type for supporting document.', 'lovekin' ); ?></div>
 				<?php elseif ( 'size' === $funding_notice ) : ?>
@@ -774,6 +784,7 @@ class LoveKin_Shortcodes {
 					<div class="lk-step" data-step="2"><?php esc_html_e( 'Purpose & Account', 'lovekin' ); ?></div>
 					<div class="lk-step" data-step="3"><?php esc_html_e( 'Review & Submit', 'lovekin' ); ?></div>
 				</div>
+				<div class="lk-form-error" data-lk="form-error" style="display:none;"></div>
 
 				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" enctype="multipart/form-data" data-lk="funding-form">
 					<input type="hidden" name="action" value="lk_submit_funding" />
@@ -802,7 +813,10 @@ class LoveKin_Shortcodes {
 							</div>
 							<div class="lk-field">
 								<label><?php esc_html_e( 'Amount Required', 'lovekin' ); ?></label>
-								<input type="number" step="0.01" name="amount" placeholder="<?php esc_attr_e( 'Amount Required', 'lovekin' ); ?>" required />
+								<div class="lk-input-group">
+									<span class="lk-input-prefix">&#8358;</span>
+									<input type="number" step="0.01" name="amount" placeholder="<?php esc_attr_e( 'Amount Required', 'lovekin' ); ?>" required />
+								</div>
 							</div>
 						</div>
 						<div class="lk-step-actions">
@@ -815,9 +829,19 @@ class LoveKin_Shortcodes {
 							<label><?php esc_html_e( 'Purpose of Fund', 'lovekin' ); ?></label>
 							<textarea name="purpose" rows="4" placeholder="<?php esc_attr_e( 'Purpose of fund', 'lovekin' ); ?>" required></textarea>
 						</div>
-						<div class="lk-field">
-							<label><?php esc_html_e( 'Account Details', 'lovekin' ); ?></label>
-							<textarea name="account_details" rows="3" placeholder="<?php esc_attr_e( 'Account details', 'lovekin' ); ?>" required></textarea>
+						<div class="lk-field-grid">
+							<div class="lk-field">
+								<label><?php esc_html_e( 'Account Name', 'lovekin' ); ?></label>
+								<input type="text" name="account_name" placeholder="<?php esc_attr_e( 'Account name', 'lovekin' ); ?>" required />
+							</div>
+							<div class="lk-field">
+								<label><?php esc_html_e( 'Account Number', 'lovekin' ); ?></label>
+								<input type="text" name="account_number" placeholder="<?php esc_attr_e( 'Account number', 'lovekin' ); ?>" required />
+							</div>
+							<div class="lk-field">
+								<label><?php esc_html_e( 'Bank Name', 'lovekin' ); ?></label>
+								<input type="text" name="bank_name" placeholder="<?php esc_attr_e( 'Bank name', 'lovekin' ); ?>" required />
+							</div>
 						</div>
 						<div class="lk-field">
 							<label><?php esc_html_e( 'Supporting Document (optional)', 'lovekin' ); ?></label>
@@ -837,7 +861,9 @@ class LoveKin_Shortcodes {
 								<li><strong><?php esc_html_e( 'Format', 'lovekin' ); ?>:</strong> <span data-lk-review="format"></span></li>
 								<li><strong><?php esc_html_e( 'Amount', 'lovekin' ); ?>:</strong> <span data-lk-review="amount"></span></li>
 								<li><strong><?php esc_html_e( 'Purpose', 'lovekin' ); ?>:</strong> <span data-lk-review="purpose"></span></li>
-								<li><strong><?php esc_html_e( 'Account Details', 'lovekin' ); ?>:</strong> <span data-lk-review="account_details"></span></li>
+								<li><strong><?php esc_html_e( 'Account Name', 'lovekin' ); ?>:</strong> <span data-lk-review="account_name"></span></li>
+								<li><strong><?php esc_html_e( 'Account Number', 'lovekin' ); ?>:</strong> <span data-lk-review="account_number"></span></li>
+								<li><strong><?php esc_html_e( 'Bank Name', 'lovekin' ); ?>:</strong> <span data-lk-review="bank_name"></span></li>
 							</ul>
 						</div>
 						<div class="lk-step-actions">
@@ -860,15 +886,16 @@ class LoveKin_Shortcodes {
 						<th><?php esc_html_e( 'Submitted', 'lovekin' ); ?></th>
 						<th><?php esc_html_e( 'Admin Notes', 'lovekin' ); ?></th>
 						<th><?php esc_html_e( 'Document', 'lovekin' ); ?></th>
+						<th><?php esc_html_e( 'Account Details', 'lovekin' ); ?></th>
 					</tr>
 				</thead>
 				<tbody>
 					<?php if ( empty( $requests ) ) : ?>
-						<tr><td colspan="5"><?php esc_html_e( 'No requests yet.', 'lovekin' ); ?></td></tr>
+						<tr><td colspan="6"><?php esc_html_e( 'No requests yet.', 'lovekin' ); ?></td></tr>
 					<?php else : ?>
 						<?php foreach ( $requests as $request ) : ?>
 							<tr>
-								<td><?php echo esc_html( number_format_i18n( $request->amount, 2 ) ); ?></td>
+								<td>&#8358;<?php echo esc_html( number_format_i18n( $request->amount, 2 ) ); ?></td>
 								<td><span class="lk-badge lk-badge--<?php echo esc_attr( $request->status ); ?>"><?php echo esc_html( ucfirst( $request->status ) ); ?></span></td>
 								<td><?php echo esc_html( mysql2date( 'M j, Y', $request->created_at ) ); ?></td>
 								<td><?php echo esc_html( $request->admin_notes ); ?></td>
@@ -878,6 +905,17 @@ class LoveKin_Shortcodes {
 									<?php else : ?>
 										<?php esc_html_e( '-', 'lovekin' ); ?>
 									<?php endif; ?>
+								</td>
+								<td>
+									<?php
+									$details = LoveKin_Funding::parse_account_details( $request->account_details );
+									printf(
+										'%s<br>%s<br>%s',
+										esc_html( $details['name'] ),
+										esc_html( $details['number'] ),
+										esc_html( $details['bank'] )
+									);
+									?>
 								</td>
 							</tr>
 						<?php endforeach; ?>

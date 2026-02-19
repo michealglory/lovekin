@@ -103,3 +103,14 @@
 	gap: 8px;
 	align-items: center;
 }
+
+.lk-admin-report-form {
+	display: flex;
+	gap: 12px;
+	align-items: flex-end;
+	flex-wrap: wrap;
+}
+
+.lk-admin-report-page .lk-root.lk-report {
+	margin-top: 16px;
+}

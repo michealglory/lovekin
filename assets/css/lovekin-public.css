@@ -160,6 +160,7 @@
 	overflow: hidden;
 	word-break: normal;
 	overflow-wrap: break-word;
+	hyphens: none;
 }
 
 .lk-status-pill {
@@ -192,6 +193,7 @@
 	overflow: hidden;
 	word-break: normal;
 	overflow-wrap: break-word;
+	hyphens: none;
 }
 
 .lk-course-metrics {
@@ -310,8 +312,12 @@
 
 .lk-profile-header {
 	display: flex;
-	gap: var(--lk-space-4);
+	gap: var(--lk-space-3);
 	align-items: center;
+}
+
+.lk-profile-header h3 {
+	margin: 0 0 4px;
 }
 
 .lk-avatar {
@@ -561,6 +567,40 @@
 	background: #fff;
 	box-shadow: none !important;
 	border: 1px solid var(--lk-border);
+}
+
+.lk-course-template {
+	max-width: 960px;
+	margin: 0 auto;
+	padding: var(--lk-space-6) var(--lk-space-4);
+}
+
+.lk-course-hero {
+	background: linear-gradient(120deg, #eef2ff 0%, #f8fafc 100%);
+	border-radius: var(--lk-radius-lg);
+	padding: var(--lk-space-6);
+	margin-bottom: var(--lk-space-5);
+}
+
+.lk-hero-actions {
+	display: flex;
+	gap: var(--lk-space-3);
+	flex-wrap: wrap;
+}
+
+.lk-course-card-full {
+	padding: var(--lk-space-5);
+}
+
+.lk-course-image {
+	width: 100%;
+	border-radius: var(--lk-radius-md);
+	margin-bottom: var(--lk-space-4);
+}
+
+.lk-course-content {
+	color: var(--lk-text);
+	line-height: 1.7;
 }
 
 /* Dashboard enhancements */
@@ -886,8 +926,8 @@
 }
 
 .lk-step.is-active {
-	background: #fff;
-	color: var(--lk-text);
+	background: var(--lk-primary);
+	color: #fff;
 	box-shadow: var(--lk-shadow-sm);
 }
 
@@ -895,6 +935,45 @@
 	background: rgba(16, 185, 129, 0.12);
 	color: var(--lk-success);
 	border-color: rgba(16, 185, 129, 0.3);
+}
+
+.lk-form-error {
+	padding: var(--lk-space-3);
+	border-radius: var(--lk-radius-md);
+	background: rgba(239, 68, 68, 0.12);
+	border: 1px solid rgba(239, 68, 68, 0.3);
+	color: var(--lk-danger);
+	margin-bottom: var(--lk-space-3);
+}
+
+.is-invalid {
+	border-color: var(--lk-danger) !important;
+}
+
+.lk-input-group.is-invalid {
+	border-color: var(--lk-danger) !important;
+}
+
+.lk-input-group {
+	display: flex;
+	align-items: center;
+	border: 1px solid var(--lk-border);
+	border-radius: var(--lk-radius-md);
+	padding: 0 12px;
+	background: #fff;
+}
+
+.lk-input-prefix {
+	color: var(--lk-muted);
+	font-weight: 600;
+	margin-right: 8px;
+}
+
+.lk-input-group input {
+	border: none;
+	padding: 10px 0;
+	width: 100%;
+	outline: none;
 }
 
 .lk-step-panel {

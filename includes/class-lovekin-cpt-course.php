@@ -10,6 +10,7 @@ class LoveKin_CPT_Course {
 		add_action( 'add_meta_boxes', array( __CLASS__, 'meta_boxes' ) );
 		add_action( 'save_post_lk_course', array( __CLASS__, 'save_meta' ), 10, 2 );
 		add_action( 'rest_api_init', array( __CLASS__, 'register_meta' ) );
+		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_admin_assets' ) );
 	}
 
 	public static function register() {
@@ -93,7 +94,33 @@ class LoveKin_CPT_Course {
 		?>
 		<p class="description"><?php esc_html_e( 'Add a PDF or resource URL for this course (e.g. media library file URL).', 'lovekin' ); ?></p>
 		<input type="url" name="lk_course_file_url" class="widefat" value="<?php echo esc_url( $file_url ); ?>" placeholder="<?php esc_attr_e( 'https://example.com/course.pdf', 'lovekin' ); ?>" />
+		<button type="button" class="button" data-lk="course-file-select"><?php esc_html_e( 'Select File', 'lovekin' ); ?></button>
 		<?php
+	}
+
+	public static function enqueue_admin_assets( $hook ) {
+		if ( 'post.php' !== $hook && 'post-new.php' !== $hook ) {
+			return;
+		}
+
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		$post_type = '';
+		if ( $screen && ! empty( $screen->post_type ) ) {
+			$post_type = $screen->post_type;
+		} elseif ( isset( $_GET['post_type'] ) ) {
+			$post_type = sanitize_text_field( wp_unslash( $_GET['post_type'] ) );
+		} elseif ( isset( $_GET['post'] ) ) {
+			$post_id = absint( $_GET['post'] );
+			$post_type = $post_id ? get_post_type( $post_id ) : '';
+		}
+
+		if ( 'lk_course' !== $post_type ) {
+			return;
+		}
+
+		wp_enqueue_media();
+		wp_enqueue_style( 'lovekin-admin', LOVEKIN_PLUGIN_URL . 'assets/css/lovekin-admin.css', array(), LOVEKIN_VERSION );
+		wp_enqueue_script( 'lovekin-admin', LOVEKIN_PLUGIN_URL . 'assets/js/lovekin-admin.js', array( 'jquery' ), LOVEKIN_VERSION, true );
 	}
 
 	public static function save_meta( $post_id, $post ) {

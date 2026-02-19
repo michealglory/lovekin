@@ -41,6 +41,7 @@ class LoveKin_Plugin {
 		require_once LOVEKIN_PLUGIN_DIR . 'includes/class-lovekin-documents.php';
 		require_once LOVEKIN_PLUGIN_DIR . 'includes/class-lovekin-archive.php';
 		require_once LOVEKIN_PLUGIN_DIR . 'includes/class-lovekin-settings.php';
+		require_once LOVEKIN_PLUGIN_DIR . 'includes/class-lovekin-tools.php';
 		require_once LOVEKIN_PLUGIN_DIR . 'includes/class-lovekin-shortcodes.php';
 
 		add_action( 'init', array( 'LoveKin_Activator', 'maybe_upgrade' ), 20 );
@@ -56,6 +57,7 @@ class LoveKin_Plugin {
 		LoveKin_Documents::init();
 		LoveKin_Archive::init();
 		LoveKin_Settings::init();
+		LoveKin_Tools::init();
 		LoveKin_Shortcodes::init();
 	}
 
