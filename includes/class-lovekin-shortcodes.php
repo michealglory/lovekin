@@ -602,6 +602,16 @@ class LoveKin_Shortcodes {
 			);
 			$check = wp_check_filetype_and_ext( $file['tmp_name'], $file['name'], $allowed );
 			$max_size = 2 * 1024 * 1024;
+			self::log_upload_debug(
+				'profile_upload_check',
+				array(
+					'name'      => $file['name'] ?? '',
+					'size'      => $file['size'] ?? 0,
+					'error'     => $file['error'] ?? '',
+					'check_ext' => $check['ext'] ?? '',
+					'check_type'=> $check['type'] ?? '',
+				)
+			);
 
 			if ( ! current_user_can( 'upload_files' ) ) {
 				$profile_error = __( 'You do not have permission to upload files.', 'lovekin' );
@@ -612,6 +622,12 @@ class LoveKin_Shortcodes {
 			} else {
 				$attachment_id = media_handle_upload( 'profile_picture', 0 );
 				if ( is_wp_error( $attachment_id ) ) {
+					self::log_upload_debug(
+						'profile_upload_error',
+						array(
+							'message' => $attachment_id->get_error_message(),
+						)
+					);
 					$profile_error = $attachment_id->get_error_message();
 				} else {
 					update_user_meta( $user_id, 'lk_profile_picture', $attachment_id );
@@ -1373,6 +1389,21 @@ class LoveKin_Shortcodes {
 			update_user_meta( $user_id, 'lk_membership_code', $code );
 		}
 		return $code;
+	}
+
+	private static function log_upload_debug( $context, $data = array() ) {
+		if ( ! defined( 'WP_DEBUG' ) || ! WP_DEBUG ) {
+			return;
+		}
+		$upload_dir = wp_upload_dir();
+		$log_file = trailingslashit( $upload_dir['basedir'] ) . 'lovekin-debug.log';
+		$payload = array(
+			'time'    => current_time( 'mysql' ),
+			'context' => $context,
+			'data'    => $data,
+		);
+		$line = wp_json_encode( $payload ) . PHP_EOL;
+		@file_put_contents( $log_file, $line, FILE_APPEND | LOCK_EX );
 	}
 
 	private static function render_login_prompt() {

@@ -75,6 +75,17 @@ class LoveKin_Funding {
 			if ( empty( $check['ext'] ) || empty( $check['type'] ) ) {
 				$check = wp_check_filetype( $file_name, $allowed_mimes );
 			}
+			self::log_upload_debug(
+				'funding_upload_check',
+				array(
+					'name'      => $file['name'] ?? '',
+					'size'      => $file['size'] ?? 0,
+					'error'     => $file['error'] ?? '',
+					'check_ext' => $check['ext'] ?? '',
+					'check_type'=> $check['type'] ?? '',
+					'allowed'   => $allowed,
+				)
+			);
 			if ( empty( $check['ext'] ) || ! in_array( $file_ext, $allowed, true ) ) {
 				wp_safe_redirect( add_query_arg( array( 'lk_funding' => 'type' ), $redirect_base ) );
 				exit;
@@ -96,6 +107,12 @@ class LoveKin_Funding {
 			remove_filter( 'upload_dir', array( __CLASS__, 'filter_funding_upload_dir' ) );
 
 			if ( isset( $upload['error'] ) ) {
+				self::log_upload_debug(
+					'funding_upload_error',
+					array(
+						'message' => $upload['error'],
+					)
+				);
 				wp_safe_redirect( add_query_arg( array( 'lk_funding' => 'upload' ), $redirect_base ) );
 				exit;
 			}
@@ -285,6 +302,21 @@ class LoveKin_Funding {
 			update_user_meta( $user_id, 'lk_membership_code', $code );
 		}
 		return $code;
+	}
+
+	private static function log_upload_debug( $context, $data = array() ) {
+		if ( ! defined( 'WP_DEBUG' ) || ! WP_DEBUG ) {
+			return;
+		}
+		$upload_dir = wp_upload_dir();
+		$log_file = trailingslashit( $upload_dir['basedir'] ) . 'lovekin-debug.log';
+		$payload = array(
+			'time'    => current_time( 'mysql' ),
+			'context' => $context,
+			'data'    => $data,
+		);
+		$line = wp_json_encode( $payload ) . PHP_EOL;
+		@file_put_contents( $log_file, $line, FILE_APPEND | LOCK_EX );
 	}
 
 	public static function filter_funding_upload_dir( $dirs ) {
