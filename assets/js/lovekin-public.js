@@ -290,6 +290,19 @@ jQuery(function ($) {
 	$('[data-lk="dropzone"]').each(function () {
 		var $zone = $(this);
 		var $input = $zone.find('input[type="file"]');
+		var $fileName = $zone.parent().find('[data-lk="file-name"]');
+
+		function updateFileName() {
+			if (!$fileName.length) {
+				return;
+			}
+			var files = $input[0] && $input[0].files ? $input[0].files : [];
+			if (files.length) {
+				$fileName.text(files[0].name);
+			} else {
+				$fileName.text('');
+			}
+		}
 
 		$zone.on('dragover', function (event) {
 			event.preventDefault();
@@ -306,7 +319,10 @@ jQuery(function ($) {
 			var files = event.originalEvent && event.originalEvent.dataTransfer ? event.originalEvent.dataTransfer.files : null;
 			if (files && files.length) {
 				$input[0].files = files;
+				updateFileName();
 			}
 		});
+
+		$input.on('change', updateFileName);
 	});
 });

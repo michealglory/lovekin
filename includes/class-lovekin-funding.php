@@ -37,7 +37,7 @@ class LoveKin_Funding {
 		$account_name   = isset( $_POST['account_name'] ) ? sanitize_text_field( wp_unslash( $_POST['account_name'] ) ) : '';
 		$account_number = isset( $_POST['account_number'] ) ? sanitize_text_field( wp_unslash( $_POST['account_number'] ) ) : '';
 		$bank_name      = isset( $_POST['bank_name'] ) ? sanitize_text_field( wp_unslash( $_POST['bank_name'] ) ) : '';
-		$membership_code = get_user_meta( $user_id, 'lk_membership_code', true );
+		$membership_code = self::ensure_membership_code( $user_id );
 		$supporting_file = '';
 		$redirect_base = wp_get_referer() ? wp_get_referer() : home_url( '/' );
 
@@ -54,15 +54,24 @@ class LoveKin_Funding {
 			)
 		);
 		if ( ! empty( $_FILES['supporting_document']['name'] ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
 			$settings = get_option( 'lovekin_upload_settings', array() );
 			$allowed  = $settings['allowed_types'] ?? array( 'pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png' );
+			$allowed_mimes = array(
+				'jpg'  => 'image/jpeg',
+				'jpeg' => 'image/jpeg',
+				'png'  => 'image/png',
+				'pdf'  => 'application/pdf',
+				'doc'  => 'application/msword',
+				'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+			);
 			$max_mb   = isset( $settings['max_file_size_mb'] ) ? (int) $settings['max_file_size_mb'] : 10;
 
 			$file = $_FILES['supporting_document'];
 			$file_name = sanitize_file_name( $file['name'] );
 			$file_ext  = strtolower( pathinfo( $file_name, PATHINFO_EXTENSION ) );
-			$check     = wp_check_filetype( $file_name );
-			if ( empty( $check['ext'] ) || ! in_array( $file_ext, $allowed, true ) ) {
+			$check     = wp_check_filetype_and_ext( $file['tmp_name'], $file_name, $allowed_mimes );
+			if ( empty( $check['ext'] ) || empty( $check['type'] ) || ! in_array( $file_ext, $allowed, true ) ) {
 				wp_safe_redirect( add_query_arg( array( 'lk_funding' => 'type' ), $redirect_base ) );
 				exit;
 			}
@@ -72,17 +81,21 @@ class LoveKin_Funding {
 				exit;
 			}
 
-			$upload_dir = LOVEKIN_PLUGIN_DIR . 'uploads/funding/' . $user_id . '/';
-			if ( ! file_exists( $upload_dir ) ) {
-				wp_mkdir_p( $upload_dir );
-			}
+			add_filter( 'upload_dir', array( __CLASS__, 'filter_funding_upload_dir' ) );
+			$upload = wp_handle_upload(
+				$file,
+				array(
+					'test_form' => false,
+					'mimes'     => $allowed_mimes,
+				)
+			);
+			remove_filter( 'upload_dir', array( __CLASS__, 'filter_funding_upload_dir' ) );
 
-			$target = $upload_dir . time() . '-' . $file_name;
-			if ( ! move_uploaded_file( $file['tmp_name'], $target ) ) {
+			if ( isset( $upload['error'] ) ) {
 				wp_safe_redirect( add_query_arg( array( 'lk_funding' => 'upload' ), $redirect_base ) );
 				exit;
 			}
-			$supporting_file = $target;
+			$supporting_file = $upload['file'] ?? '';
 		}
 
 		global $wpdb;
@@ -258,6 +271,25 @@ class LoveKin_Funding {
 		$parsed['number'] = __( 'N/A', 'lovekin' );
 		$parsed['bank'] = __( 'N/A', 'lovekin' );
 		return $parsed;
+	}
+
+	private static function ensure_membership_code( $user_id ) {
+		$code = get_user_meta( $user_id, 'lk_membership_code', true );
+		$invalid = ! $code || preg_match( '/[^A-Za-z0-9]/', $code ) || stripos( $code, 'LK' ) !== 0;
+		if ( $invalid ) {
+			$code = sprintf( 'LK%04d%03d', absint( $user_id ), wp_rand( 100, 999 ) );
+			update_user_meta( $user_id, 'lk_membership_code', $code );
+		}
+		return $code;
+	}
+
+	public static function filter_funding_upload_dir( $dirs ) {
+		$user_id = get_current_user_id();
+		$subdir = '/lovekin/funding/' . absint( $user_id );
+		$dirs['subdir'] = $subdir;
+		$dirs['path']   = $dirs['basedir'] . $subdir;
+		$dirs['url']    = $dirs['baseurl'] . $subdir;
+		return $dirs;
 	}
 
 	public static function handle_download() {

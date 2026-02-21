@@ -352,8 +352,9 @@ class LoveKin_Tools {
 
 	private static function ensure_membership_code( $user_id ) {
 		$code = get_user_meta( $user_id, 'lk_membership_code', true );
-		if ( ! $code || false !== strpos( $code, '-' ) ) {
-			$code = 'LK' . $user_id . wp_rand( 1000, 9999 );
+		$invalid = ! $code || preg_match( '/[^A-Za-z0-9]/', $code ) || stripos( $code, 'LK' ) !== 0;
+		if ( $invalid ) {
+			$code = sprintf( 'LK%04d%03d', absint( $user_id ), wp_rand( 100, 999 ) );
 			update_user_meta( $user_id, 'lk_membership_code', $code );
 		}
 	}

@@ -262,8 +262,13 @@
 
 .lk-button--ghost {
 	background: transparent;
-	border: 1px solid var(--lk-border);
-	color: var(--lk-text);
+	border: 1px solid var(--lk-primary);
+	color: var(--lk-primary);
+}
+
+.lk-button--ghost:hover {
+	background: rgba(59, 130, 246, 0.08);
+	border-color: var(--lk-primary);
 }
 
 .lk-button--danger {
@@ -317,7 +322,7 @@
 }
 
 .lk-profile-header h3 {
-	margin: 0 0 4px;
+	margin: 0 0 2px;
 }
 
 .lk-avatar {
@@ -548,6 +553,10 @@
 	text-transform: uppercase;
 	letter-spacing: 0.08em;
 	color: var(--lk-muted);
+}
+
+.lk-hero-stat-label {
+	color: var(--lk-primary);
 }
 
 .lk-hero-stats strong {
@@ -823,6 +832,21 @@
 	border-color: var(--lk-primary);
 	background: rgba(59, 130, 246, 0.08);
 	color: var(--lk-primary);
+}
+
+.lk-file-selected {
+	font-size: 12px;
+	color: var(--lk-primary);
+	margin-top: 6px;
+}
+
+.lk-report-return {
+	margin-bottom: var(--lk-space-3);
+}
+
+.lk-auth {
+	max-width: 460px;
+	margin: 0 auto;
 }
 
 .lk-profile-card {

@@ -13,6 +13,8 @@ class LoveKin_Shortcodes {
 		add_shortcode( 'lovekin_funding_request', array( __CLASS__, 'render_funding' ) );
 		add_shortcode( 'lovekin_documents', array( __CLASS__, 'render_documents' ) );
 		add_shortcode( 'lovekin_archive', array( __CLASS__, 'render_archive' ) );
+		add_shortcode( 'lovekin_login', array( __CLASS__, 'render_login_form' ) );
+		add_shortcode( 'lovekin_register', array( __CLASS__, 'render_register_form' ) );
 
 		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'maybe_enqueue_assets' ) );
 		add_action( 'admin_post_lk_update_profile', array( __CLASS__, 'handle_profile_update' ) );
@@ -83,6 +85,8 @@ class LoveKin_Shortcodes {
 			'lovekin_funding_request',
 			'lovekin_documents',
 			'lovekin_archive',
+			'lovekin_login',
+			'lovekin_register',
 		);
 
 		foreach ( $shortcodes as $shortcode ) {
@@ -387,7 +391,6 @@ class LoveKin_Shortcodes {
 					<?php foreach ( $course_posts as $course ) :
 						$assessment = LoveKin_Assessments::get_assessment_for_course( $course->ID );
 						$file_url = get_post_meta( $course->ID, '_lk_course_file_url', true );
-						$course_url = get_permalink( $course->ID );
 						$latest_score = LoveKin_Assessments::get_latest_score_for_user_course( get_current_user_id(), $course->ID );
 						$has_assessment = (bool) $assessment;
 						?>
@@ -418,13 +421,6 @@ class LoveKin_Shortcodes {
 									<a class="lk-button lk-button--primary" href="<?php echo esc_url( get_permalink( $assessment->ID ) ); ?>">
 										<?php esc_html_e( 'Take Assessment', 'lovekin' ); ?>
 									</a>
-									<?php if ( $course_url ) : ?>
-										<a class="lk-button lk-button--ghost" href="<?php echo esc_url( $course_url ); ?>"><?php esc_html_e( 'View Course', 'lovekin' ); ?></a>
-									<?php endif; ?>
-								<?php else : ?>
-									<?php if ( $course_url ) : ?>
-										<a class="lk-button lk-button--primary" href="<?php echo esc_url( $course_url ); ?>"><?php esc_html_e( 'View Course', 'lovekin' ); ?></a>
-									<?php endif; ?>
 								<?php endif; ?>
 							</div>
 						</div>
@@ -447,15 +443,21 @@ class LoveKin_Shortcodes {
 
 		$user_id = get_current_user_id();
 		$user    = get_user_by( 'id', $user_id );
-		$membership_code = get_user_meta( $user_id, 'lk_membership_code', true );
-		if ( ! $membership_code || false !== strpos( $membership_code, '-' ) ) {
-			$membership_code = 'LK' . $user_id . wp_rand( 1000, 9999 );
-			update_user_meta( $user_id, 'lk_membership_code', $membership_code );
-		}
+		$membership_code = self::ensure_membership_code( $user_id );
 		$occupation = get_user_meta( $user_id, 'lk_occupation', true );
 		$position = get_user_meta( $user_id, 'lk_org_chart_position', true );
-		$avatar_id = get_user_meta( $user_id, 'lk_profile_picture', true );
-		$avatar_url = $avatar_id ? wp_get_attachment_image_url( $avatar_id, 'thumbnail' ) : '';
+		$first_name = get_user_meta( $user_id, 'first_name', true );
+		$last_name  = get_user_meta( $user_id, 'last_name', true );
+		$avatar_meta = get_user_meta( $user_id, 'lk_profile_picture', true );
+		$avatar_url  = '';
+		if ( $avatar_meta ) {
+			if ( is_numeric( $avatar_meta ) ) {
+				$avatar_url = wp_get_attachment_image_url( (int) $avatar_meta, 'thumbnail' );
+			}
+			if ( ! $avatar_url ) {
+				$avatar_url = $avatar_meta;
+			}
+		}
 		$status = in_array( 'lk_primary', (array) $user->roles, true ) ? 'Primary' : 'Secondary';
 		$profile_attempts = LoveKin_Reports::get_user_attempts( $user_id );
 		$profile_average = 0;
@@ -523,7 +525,19 @@ class LoveKin_Shortcodes {
 								<input type="file" name="profile_picture" accept="image/*" />
 								<span><?php esc_html_e( 'Drag and drop or click to upload', 'lovekin' ); ?></span>
 							</div>
+							<div class="lk-file-selected" data-lk="file-name"></div>
 							<span class="lk-help-text"><?php esc_html_e( 'PNG or JPG, up to 2MB recommended.', 'lovekin' ); ?></span>
+						</div>
+
+						<div class="lk-field-grid">
+							<div class="lk-field">
+								<label><?php esc_html_e( 'First Name', 'lovekin' ); ?></label>
+								<input type="text" name="first_name" value="<?php echo esc_attr( $first_name ); ?>" />
+							</div>
+							<div class="lk-field">
+								<label><?php esc_html_e( 'Last Name', 'lovekin' ); ?></label>
+								<input type="text" name="last_name" value="<?php echo esc_attr( $last_name ); ?>" />
+							</div>
 						</div>
 
 						<div class="lk-field-grid">
@@ -571,17 +585,43 @@ class LoveKin_Shortcodes {
 			require_once ABSPATH . 'wp-admin/includes/file.php';
 			require_once ABSPATH . 'wp-admin/includes/media.php';
 			require_once ABSPATH . 'wp-admin/includes/image.php';
-			$attachment_id = media_handle_upload( 'profile_picture', 0 );
-			if ( ! is_wp_error( $attachment_id ) ) {
-				update_user_meta( $user_id, 'lk_profile_picture', $attachment_id );
+			$file = $_FILES['profile_picture'];
+			$allowed = array(
+				'jpg'  => 'image/jpeg',
+				'jpeg' => 'image/jpeg',
+				'png'  => 'image/png',
+				'webp' => 'image/webp',
+			);
+			$check = wp_check_filetype_and_ext( $file['tmp_name'], $file['name'], $allowed );
+			$max_size = 2 * 1024 * 1024;
+
+			if ( ! empty( $check['ext'] ) && ! empty( $check['type'] ) && $file['size'] <= $max_size ) {
+				$attachment_id = media_handle_upload( 'profile_picture', 0 );
+				if ( ! is_wp_error( $attachment_id ) ) {
+					update_user_meta( $user_id, 'lk_profile_picture', $attachment_id );
+				}
 			}
 		}
 
+		$first_name = isset( $_POST['first_name'] ) ? sanitize_text_field( wp_unslash( $_POST['first_name'] ) ) : '';
+		$last_name  = isset( $_POST['last_name'] ) ? sanitize_text_field( wp_unslash( $_POST['last_name'] ) ) : '';
 		$occupation      = isset( $_POST['occupation'] ) ? sanitize_text_field( wp_unslash( $_POST['occupation'] ) ) : '';
 		$position        = isset( $_POST['position'] ) ? sanitize_text_field( wp_unslash( $_POST['position'] ) ) : '';
 
+		update_user_meta( $user_id, 'first_name', $first_name );
+		update_user_meta( $user_id, 'last_name', $last_name );
 		update_user_meta( $user_id, 'lk_occupation', $occupation );
 		update_user_meta( $user_id, 'lk_org_chart_position', $position );
+
+		if ( $first_name || $last_name ) {
+			$display_name = trim( $first_name . ' ' . $last_name );
+			wp_update_user(
+				array(
+					'ID'           => $user_id,
+					'display_name' => $display_name,
+				)
+			);
+		}
 
 		set_transient( 'lk_profile_updated_' . $user_id, 1, 30 );
 		$redirect = wp_get_referer() ? wp_get_referer() : home_url();
@@ -597,6 +637,7 @@ class LoveKin_Shortcodes {
 
 		$user_id = get_current_user_id();
 		$view_id = $user_id;
+		$return_url = '';
 		if ( isset( $_GET['lk_user'] ) ) {
 			$requested = absint( $_GET['lk_user'] );
 			$relationship = LoveKin_Relationships::get_primary_for_secondary( $requested );
@@ -607,8 +648,11 @@ class LoveKin_Shortcodes {
 				$view_id = $requested;
 			}
 		}
+		if ( $view_id && $view_id !== $user_id ) {
+			$return_url = self::get_dashboard_url();
+		}
 
-		return LoveKin_Reports::render_report_view( $view_id, current_user_can( 'lk_view_all_reports' ) || current_user_can( 'lk_edit_remarks' ) );
+		return LoveKin_Reports::render_report_view( $view_id, current_user_can( 'lk_view_all_reports' ) || current_user_can( 'lk_edit_remarks' ), $return_url );
 	}
 
 	public static function render_assessment( $atts = array() ) {
@@ -749,11 +793,7 @@ class LoveKin_Shortcodes {
 		}
 
 		$user = wp_get_current_user();
-		$membership_code = get_user_meta( $user->ID, 'lk_membership_code', true );
-		if ( ! $membership_code || false !== strpos( $membership_code, '-' ) ) {
-			$membership_code = 'LK' . $user->ID . wp_rand( 1000, 9999 );
-			update_user_meta( $user->ID, 'lk_membership_code', $membership_code );
-		}
+		$membership_code = self::ensure_membership_code( $user->ID );
 		$requests = LoveKin_Funding::get_user_requests( $user->ID );
 		$funding_notice = isset( $_GET['lk_funding'] ) ? sanitize_text_field( wp_unslash( $_GET['lk_funding'] ) ) : '';
 
@@ -1085,8 +1125,16 @@ class LoveKin_Shortcodes {
 			return '';
 		}
 
-		$avatar_id  = get_user_meta( $user_id, 'lk_profile_picture', true );
-		$avatar_url = $avatar_id ? wp_get_attachment_image_url( $avatar_id, 'thumbnail' ) : '';
+		$avatar_meta = get_user_meta( $user_id, 'lk_profile_picture', true );
+		$avatar_url  = '';
+		if ( $avatar_meta ) {
+			if ( is_numeric( $avatar_meta ) ) {
+				$avatar_url = wp_get_attachment_image_url( (int) $avatar_meta, 'thumbnail' );
+			}
+			if ( ! $avatar_url ) {
+				$avatar_url = $avatar_meta;
+			}
+		}
 		$score      = $show_score ? LoveKin_Assessments::get_latest_score_for_user( $user_id ) : null;
 
 		ob_start();
@@ -1161,6 +1209,150 @@ class LoveKin_Shortcodes {
 		}
 
 		return $at_risk;
+	}
+
+	public static function render_login_form() {
+		if ( is_user_logged_in() ) {
+			wp_safe_redirect( self::get_dashboard_url() );
+			exit;
+		}
+
+		$error = '';
+		if ( 'POST' === $_SERVER['REQUEST_METHOD'] && isset( $_POST['lk_login_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['lk_login_nonce'] ) ), 'lk_login' ) ) {
+			$username = isset( $_POST['username'] ) ? sanitize_user( wp_unslash( $_POST['username'] ) ) : '';
+			$password = isset( $_POST['password'] ) ? (string) wp_unslash( $_POST['password'] ) : '';
+
+			$user = wp_signon(
+				array(
+					'user_login'    => $username,
+					'user_password' => $password,
+					'remember'      => true,
+				),
+				false
+			);
+
+			if ( is_wp_error( $user ) ) {
+				$error = $user->get_error_message();
+			} else {
+				wp_safe_redirect( self::get_dashboard_url() );
+				exit;
+			}
+		}
+
+		ob_start();
+		?>
+		<div class="lk-card lk-auth">
+			<h3><?php esc_html_e( 'Login', 'lovekin' ); ?></h3>
+			<?php if ( $error ) : ?>
+				<div class="lk-alert lk-alert--error"><?php echo esc_html( $error ); ?></div>
+			<?php endif; ?>
+			<form method="post" class="lk-form">
+				<label><?php esc_html_e( 'Username or Email', 'lovekin' ); ?></label>
+				<input type="text" name="username" required />
+				<label><?php esc_html_e( 'Password', 'lovekin' ); ?></label>
+				<input type="password" name="password" required />
+				<?php wp_nonce_field( 'lk_login', 'lk_login_nonce' ); ?>
+				<button type="submit" class="lk-button"><?php esc_html_e( 'Sign In', 'lovekin' ); ?></button>
+			</form>
+		</div>
+		<?php
+		return ob_get_clean();
+	}
+
+	public static function render_register_form() {
+		if ( is_user_logged_in() ) {
+			wp_safe_redirect( self::get_dashboard_url() );
+			exit;
+		}
+
+		$error = '';
+		if ( 'POST' === $_SERVER['REQUEST_METHOD'] && isset( $_POST['lk_register_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['lk_register_nonce'] ) ), 'lk_register' ) ) {
+			$username = isset( $_POST['username'] ) ? sanitize_user( wp_unslash( $_POST['username'] ) ) : '';
+			$email    = isset( $_POST['email'] ) ? sanitize_email( wp_unslash( $_POST['email'] ) ) : '';
+			$password = isset( $_POST['password'] ) ? (string) wp_unslash( $_POST['password'] ) : '';
+			$first    = isset( $_POST['first_name'] ) ? sanitize_text_field( wp_unslash( $_POST['first_name'] ) ) : '';
+			$last     = isset( $_POST['last_name'] ) ? sanitize_text_field( wp_unslash( $_POST['last_name'] ) ) : '';
+
+			if ( empty( $username ) || empty( $email ) || empty( $password ) ) {
+				$error = __( 'Please complete all required fields.', 'lovekin' );
+			} elseif ( username_exists( $username ) || email_exists( $email ) ) {
+				$error = __( 'User already exists with those details.', 'lovekin' );
+			} else {
+				$user_id = wp_insert_user(
+					array(
+						'user_login'   => $username,
+						'user_email'   => $email,
+						'user_pass'    => $password,
+						'first_name'   => $first,
+						'last_name'    => $last,
+						'display_name' => trim( $first . ' ' . $last ),
+						'role'         => 'lk_secondary',
+					)
+				);
+
+				if ( is_wp_error( $user_id ) ) {
+					$error = $user_id->get_error_message();
+				} else {
+					wp_set_current_user( $user_id );
+					wp_set_auth_cookie( $user_id );
+					self::ensure_membership_code( $user_id );
+					wp_safe_redirect( self::get_dashboard_url() );
+					exit;
+				}
+			}
+		}
+
+		ob_start();
+		?>
+		<div class="lk-card lk-auth">
+			<h3><?php esc_html_e( 'Register', 'lovekin' ); ?></h3>
+			<?php if ( $error ) : ?>
+				<div class="lk-alert lk-alert--error"><?php echo esc_html( $error ); ?></div>
+			<?php endif; ?>
+			<form method="post" class="lk-form">
+				<label><?php esc_html_e( 'First Name', 'lovekin' ); ?></label>
+				<input type="text" name="first_name" />
+				<label><?php esc_html_e( 'Last Name', 'lovekin' ); ?></label>
+				<input type="text" name="last_name" />
+				<label><?php esc_html_e( 'Username', 'lovekin' ); ?></label>
+				<input type="text" name="username" required />
+				<label><?php esc_html_e( 'Email', 'lovekin' ); ?></label>
+				<input type="email" name="email" required />
+				<label><?php esc_html_e( 'Password', 'lovekin' ); ?></label>
+				<input type="password" name="password" required />
+				<?php wp_nonce_field( 'lk_register', 'lk_register_nonce' ); ?>
+				<button type="submit" class="lk-button"><?php esc_html_e( 'Create Account', 'lovekin' ); ?></button>
+			</form>
+		</div>
+		<?php
+		return ob_get_clean();
+	}
+
+	private static function get_dashboard_url() {
+		$pages = get_posts(
+			array(
+				'post_type'      => 'page',
+				'post_status'    => 'publish',
+				'posts_per_page' => 100,
+			)
+		);
+		foreach ( $pages as $page ) {
+			if ( has_shortcode( $page->post_content, 'lovekin_dashboard' ) ) {
+				$url = get_permalink( $page->ID );
+				return $url ? $url : home_url( '/' );
+			}
+		}
+		return home_url( '/' );
+	}
+
+	private static function ensure_membership_code( $user_id ) {
+		$code = get_user_meta( $user_id, 'lk_membership_code', true );
+		$invalid = ! $code || preg_match( '/[^A-Za-z0-9]/', $code ) || stripos( $code, 'LK' ) !== 0;
+		if ( $invalid ) {
+			$code = sprintf( 'LK%04d%03d', absint( $user_id ), wp_rand( 100, 999 ) );
+			update_user_meta( $user_id, 'lk_membership_code', $code );
+		}
+		return $code;
 	}
 
 	private static function render_login_prompt() {

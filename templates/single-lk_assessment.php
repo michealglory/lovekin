@@ -66,15 +66,15 @@ if ( have_posts() ) {
 					<?php endif; ?>
 					<div class="lk-hero-stats">
 						<div>
-							<span><?php esc_html_e( 'Attempts', 'lovekin' ); ?></span>
+							<span class="lk-hero-stat-label"><?php esc_html_e( 'Attempts', 'lovekin' ); ?></span>
 							<strong><?php echo esc_html( $attempt_count ); ?></strong>
 						</div>
 						<div>
-							<span><?php esc_html_e( 'Avg Score', 'lovekin' ); ?></span>
+							<span class="lk-hero-stat-label"><?php esc_html_e( 'Avg Score', 'lovekin' ); ?></span>
 							<strong><?php echo esc_html( $attempt_count ? number_format_i18n( $attempt_avg, 1 ) . '%' : '--' ); ?></strong>
 						</div>
 					</div>
-					<a class="lk-button lk-button--ghost" href="<?php echo esc_url( $dashboard_url ); ?>"><?php esc_html_e( 'Return to Dashboard', 'lovekin' ); ?></a>
+					<a class="lk-button lk-button--primary" href="<?php echo esc_url( $dashboard_url ); ?>"><?php esc_html_e( 'Return to Dashboard', 'lovekin' ); ?></a>
 				</div>
 			</div>
 			<div class="lk-card lk-assessment-card">

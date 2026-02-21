@@ -42,6 +42,7 @@ class LoveKin_Reports {
 			);
 		}
 
+		set_transient( 'lk_remark_saved_' . get_current_user_id(), 1, 30 );
 		wp_safe_redirect( wp_get_referer() ? wp_get_referer() : admin_url( 'admin.php?page=lovekin-reports' ) );
 		exit;
 	}
@@ -89,10 +90,14 @@ class LoveKin_Reports {
 		<?php
 	}
 
-	public static function render_report_view( $user_id, $is_admin = false ) {
+	public static function render_report_view( $user_id, $is_admin = false, $return_url = '' ) {
 		$attempts = self::get_user_attempts( $user_id );
 		$averages = self::get_average_scores( $attempts );
 		$chart_data = wp_json_encode( self::get_chart_data( $attempts ) );
+		$remark_notice = get_transient( 'lk_remark_saved_' . get_current_user_id() );
+		if ( $remark_notice ) {
+			delete_transient( 'lk_remark_saved_' . get_current_user_id() );
+		}
 		$attempts_payload = array();
 		$course_options = array();
 		foreach ( $attempts as $attempt ) {
@@ -115,6 +120,16 @@ class LoveKin_Reports {
 		ob_start();
 		?>
 		<div class="lk-root lk-report" data-lk="report" data-lk-chart='<?php echo esc_attr( $chart_data ); ?>' data-lk-attempts='<?php echo esc_attr( $attempts_json ); ?>'>
+			<?php if ( $remark_notice ) : ?>
+				<div class="lk-alert lk-alert--success"><?php esc_html_e( 'Remark saved.', 'lovekin' ); ?></div>
+			<?php endif; ?>
+			<?php if ( $return_url ) : ?>
+				<div class="lk-report-return">
+					<a class="lk-button lk-button--primary" href="<?php echo esc_url( $return_url ); ?>">
+						<?php esc_html_e( 'Return to Dashboard', 'lovekin' ); ?>
+					</a>
+				</div>
+			<?php endif; ?>
 			<div class="lk-report-filters">
 				<div class="lk-field">
 					<label><?php esc_html_e( 'Course', 'lovekin' ); ?></label>
