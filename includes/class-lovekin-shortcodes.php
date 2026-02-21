@@ -602,6 +602,8 @@ class LoveKin_Shortcodes {
 			);
 			$check = wp_check_filetype_and_ext( $file['tmp_name'], $file['name'], $allowed );
 			$max_size = 2 * 1024 * 1024;
+			$upload_dir = wp_upload_dir();
+			$upload_path = $upload_dir['path'];
 			self::log_upload_debug(
 				'profile_upload_check',
 				array(
@@ -610,11 +612,16 @@ class LoveKin_Shortcodes {
 					'error'     => $file['error'] ?? '',
 					'check_ext' => $check['ext'] ?? '',
 					'check_type'=> $check['type'] ?? '',
+					'upload_path' => $upload_path,
 				)
 			);
 
 			if ( ! current_user_can( 'upload_files' ) ) {
 				$profile_error = __( 'You do not have permission to upload files.', 'lovekin' );
+			} elseif ( ! wp_mkdir_p( $upload_path ) ) {
+				$profile_error = __( 'Upload directory could not be created. Please check folder permissions.', 'lovekin' );
+			} elseif ( ! wp_is_writable( $upload_path ) ) {
+				$profile_error = __( 'Upload directory is not writable. Please check folder permissions.', 'lovekin' );
 			} elseif ( empty( $check['ext'] ) || empty( $check['type'] ) ) {
 				$profile_error = __( 'Unsupported profile image type. Please upload a JPG, PNG, or WebP image.', 'lovekin' );
 			} elseif ( $file['size'] > $max_size ) {
@@ -976,8 +983,11 @@ class LoveKin_Shortcodes {
 								<td><?php echo esc_html( mysql2date( 'M j, Y', $request->created_at ) ); ?></td>
 								<td><?php echo esc_html( $request->admin_notes ); ?></td>
 								<td>
-									<?php if ( ! empty( $request->supporting_file ) ) : ?>
-										<a class="lk-button lk-button--ghost" href="<?php echo esc_url( LoveKin_Funding::get_download_url( $request->id ) ); ?>"><?php esc_html_e( 'Download', 'lovekin' ); ?></a>
+									<?php
+									$supporting_url = LoveKin_Funding::get_supporting_file_url( $request->supporting_file );
+									?>
+									<?php if ( $supporting_url ) : ?>
+										<a class="lk-button lk-button--ghost" href="<?php echo esc_url( $supporting_url ); ?>" target="_blank" rel="noopener"><?php esc_html_e( 'Download', 'lovekin' ); ?></a>
 									<?php else : ?>
 										<?php esc_html_e( '-', 'lovekin' ); ?>
 									<?php endif; ?>

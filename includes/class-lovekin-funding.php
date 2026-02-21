@@ -116,7 +116,7 @@ class LoveKin_Funding {
 				wp_safe_redirect( add_query_arg( array( 'lk_funding' => 'upload' ), $redirect_base ) );
 				exit;
 			}
-			$supporting_file = $upload['file'] ?? '';
+			$supporting_file = $upload['url'] ?? '';
 		}
 
 		global $wpdb;
@@ -213,8 +213,11 @@ class LoveKin_Funding {
 								<td><?php echo esc_html( $row->format ); ?></td>
 								<td><?php echo esc_html( ucfirst( $row->status ) ); ?></td>
 								<td>
-									<?php if ( ! empty( $row->supporting_file ) ) : ?>
-										<a class="button button-secondary" href="<?php echo esc_url( self::get_download_url( $row->id ) ); ?>"><?php esc_html_e( 'Download', 'lovekin' ); ?></a>
+									<?php
+									$supporting_url = self::get_supporting_file_url( $row->supporting_file );
+									?>
+									<?php if ( $supporting_url ) : ?>
+										<a class="button button-secondary" href="<?php echo esc_url( $supporting_url ); ?>" target="_blank" rel="noopener"><?php esc_html_e( 'Download', 'lovekin' ); ?></a>
 									<?php else : ?>
 										<?php esc_html_e( '-', 'lovekin' ); ?>
 									<?php endif; ?>
@@ -267,6 +270,31 @@ class LoveKin_Funding {
 
 	public static function get_download_url( $request_id ) {
 		return add_query_arg( array( 'lk_funding_doc' => $request_id ), home_url( '/' ) );
+	}
+
+	public static function get_supporting_file_url( $value ) {
+		if ( empty( $value ) ) {
+			return '';
+		}
+		if ( self::is_url( $value ) ) {
+			return $value;
+		}
+
+		$upload_dir = wp_upload_dir();
+		$basedir = wp_normalize_path( $upload_dir['basedir'] );
+		$baseurl = $upload_dir['baseurl'];
+		$value_normalized = wp_normalize_path( $value );
+
+		if ( 0 === strpos( $value_normalized, $basedir ) ) {
+			$relative = ltrim( str_replace( $basedir, '', $value_normalized ), '/' );
+			return trailingslashit( $baseurl ) . $relative;
+		}
+
+		return '';
+	}
+
+	private static function is_url( $value ) {
+		return (bool) preg_match( '#^https?://#i', $value );
 	}
 
 	public static function parse_account_details( $details ) {
@@ -337,7 +365,16 @@ class LoveKin_Funding {
 		global $wpdb;
 		$table = $wpdb->prefix . 'lk_funding_requests';
 		$request = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", $request_id ) );
-		if ( ! $request || empty( $request->supporting_file ) || ! file_exists( $request->supporting_file ) ) {
+		if ( ! $request || empty( $request->supporting_file ) ) {
+			return;
+		}
+
+		if ( self::is_url( $request->supporting_file ) ) {
+			wp_safe_redirect( $request->supporting_file );
+			exit;
+		}
+
+		if ( ! file_exists( $request->supporting_file ) ) {
 			return;
 		}
 
