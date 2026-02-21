@@ -472,13 +472,20 @@ class LoveKin_Shortcodes {
 
 		ob_start();
 		$profile_notice = get_transient( 'lk_profile_updated_' . $user_id );
+		$profile_error  = get_transient( 'lk_profile_error_' . $user_id );
 		if ( $profile_notice ) {
 			delete_transient( 'lk_profile_updated_' . $user_id );
+		}
+		if ( $profile_error ) {
+			delete_transient( 'lk_profile_error_' . $user_id );
 		}
 		?>
 		<div class="lk-root lk-profile" data-lk="profile">
 			<?php if ( $profile_notice ) : ?>
 				<div class="lk-alert lk-alert--success"><?php esc_html_e( 'Profile updated successfully.', 'lovekin' ); ?></div>
+			<?php endif; ?>
+			<?php if ( $profile_error ) : ?>
+				<div class="lk-alert lk-alert--error"><?php echo esc_html( $profile_error ); ?></div>
 			<?php endif; ?>
 			<div class="lk-profile-grid">
 				<div class="lk-card lk-profile-aside">
@@ -581,6 +588,7 @@ class LoveKin_Shortcodes {
 		check_admin_referer( 'lk_update_profile' );
 		$user_id = get_current_user_id();
 
+		$profile_error = '';
 		if ( ! empty( $_FILES['profile_picture']['name'] ) ) {
 			require_once ABSPATH . 'wp-admin/includes/file.php';
 			require_once ABSPATH . 'wp-admin/includes/media.php';
@@ -595,9 +603,17 @@ class LoveKin_Shortcodes {
 			$check = wp_check_filetype_and_ext( $file['tmp_name'], $file['name'], $allowed );
 			$max_size = 2 * 1024 * 1024;
 
-			if ( ! empty( $check['ext'] ) && ! empty( $check['type'] ) && $file['size'] <= $max_size ) {
+			if ( ! current_user_can( 'upload_files' ) ) {
+				$profile_error = __( 'You do not have permission to upload files.', 'lovekin' );
+			} elseif ( empty( $check['ext'] ) || empty( $check['type'] ) ) {
+				$profile_error = __( 'Unsupported profile image type. Please upload a JPG, PNG, or WebP image.', 'lovekin' );
+			} elseif ( $file['size'] > $max_size ) {
+				$profile_error = __( 'Profile image exceeds the 2MB limit.', 'lovekin' );
+			} else {
 				$attachment_id = media_handle_upload( 'profile_picture', 0 );
-				if ( ! is_wp_error( $attachment_id ) ) {
+				if ( is_wp_error( $attachment_id ) ) {
+					$profile_error = $attachment_id->get_error_message();
+				} else {
 					update_user_meta( $user_id, 'lk_profile_picture', $attachment_id );
 				}
 			}
@@ -623,7 +639,11 @@ class LoveKin_Shortcodes {
 			);
 		}
 
-		set_transient( 'lk_profile_updated_' . $user_id, 1, 30 );
+		if ( $profile_error ) {
+			set_transient( 'lk_profile_error_' . $user_id, $profile_error, 30 );
+		} else {
+			set_transient( 'lk_profile_updated_' . $user_id, 1, 30 );
+		}
 		$redirect = wp_get_referer() ? wp_get_referer() : home_url();
 		$redirect = remove_query_arg( array( 'lk_profile' ), $redirect );
 		wp_safe_redirect( $redirect );

@@ -56,7 +56,8 @@ class LoveKin_Funding {
 		if ( ! empty( $_FILES['supporting_document']['name'] ) ) {
 			require_once ABSPATH . 'wp-admin/includes/file.php';
 			$settings = get_option( 'lovekin_upload_settings', array() );
-			$allowed  = $settings['allowed_types'] ?? array( 'pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png' );
+			$required_types = array( 'pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png' );
+			$allowed  = array_unique( array_merge( $required_types, $settings['allowed_types'] ?? array() ) );
 			$allowed_mimes = array(
 				'jpg'  => 'image/jpeg',
 				'jpeg' => 'image/jpeg',
@@ -71,7 +72,10 @@ class LoveKin_Funding {
 			$file_name = sanitize_file_name( $file['name'] );
 			$file_ext  = strtolower( pathinfo( $file_name, PATHINFO_EXTENSION ) );
 			$check     = wp_check_filetype_and_ext( $file['tmp_name'], $file_name, $allowed_mimes );
-			if ( empty( $check['ext'] ) || empty( $check['type'] ) || ! in_array( $file_ext, $allowed, true ) ) {
+			if ( empty( $check['ext'] ) || empty( $check['type'] ) ) {
+				$check = wp_check_filetype( $file_name, $allowed_mimes );
+			}
+			if ( empty( $check['ext'] ) || ! in_array( $file_ext, $allowed, true ) ) {
 				wp_safe_redirect( add_query_arg( array( 'lk_funding' => 'type' ), $redirect_base ) );
 				exit;
 			}
