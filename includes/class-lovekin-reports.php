@@ -116,6 +116,7 @@ class LoveKin_Reports {
 		$attempts_json = wp_json_encode( $attempts_payload );
 		$trend = self::get_trend_delta( $attempts );
 		$trend_class = $trend >= 0 ? 'lk-trend--up' : 'lk-trend--down';
+		$trend_icon = $trend >= 0 ? 'dashicons-arrow-up-alt2' : 'dashicons-arrow-down-alt2';
 
 		ob_start();
 		?>
@@ -152,25 +153,41 @@ class LoveKin_Reports {
 			</div>
 
 			<div class="lk-report-hero">
-				<div class="lk-hero-card">
-					<h3><?php esc_html_e( 'Average Score', 'lovekin' ); ?></h3>
-					<span class="lk-hero-value" data-lk="hero-average"><?php echo esc_html( number_format_i18n( $averages['overall'], 1 ) ); ?>%</span>
-					<span class="lk-trend <?php echo esc_attr( $trend_class ); ?>">
-						<?php
-						printf(
-							esc_html__( '%s%% vs previous 3', 'lovekin' ),
-							number_format_i18n( $trend, 1 )
-						);
-						?>
-					</span>
+				<div class="lk-hero-card lk-hero-card--stat">
+					<div class="lk-hero-head">
+						<span class="lk-hero-icon dashicons dashicons-chart-line" aria-hidden="true"></span>
+						<h3><?php esc_html_e( 'Average Score', 'lovekin' ); ?></h3>
+					</div>
+					<div class="lk-hero-body">
+						<span class="lk-hero-value" data-lk="hero-average"><?php echo esc_html( number_format_i18n( $averages['overall'], 1 ) ); ?>%</span>
+						<span class="lk-trend <?php echo esc_attr( $trend_class ); ?>">
+							<span class="dashicons <?php echo esc_attr( $trend_icon ); ?>" aria-hidden="true"></span>
+							<?php
+							printf(
+								esc_html__( '%s%% vs previous 3', 'lovekin' ),
+								number_format_i18n( $trend, 1 )
+							);
+							?>
+						</span>
+					</div>
 				</div>
-				<div class="lk-hero-card">
-					<h3><?php esc_html_e( 'Assessments Taken', 'lovekin' ); ?></h3>
-					<span class="lk-hero-value" data-lk="hero-count"><?php echo esc_html( (int) $averages['count'] ); ?></span>
+				<div class="lk-hero-card lk-hero-card--stat">
+					<div class="lk-hero-head">
+						<span class="lk-hero-icon dashicons dashicons-forms" aria-hidden="true"></span>
+						<h3><?php esc_html_e( 'Assessments Taken', 'lovekin' ); ?></h3>
+					</div>
+					<div class="lk-hero-body">
+						<span class="lk-hero-value" data-lk="hero-count"><?php echo esc_html( (int) $averages['count'] ); ?></span>
+					</div>
 				</div>
-				<div class="lk-hero-card">
-					<h3><?php esc_html_e( 'Recent Avg (5)', 'lovekin' ); ?></h3>
-					<span class="lk-hero-value" data-lk="hero-recent"><?php echo esc_html( number_format_i18n( $averages['recent'], 1 ) ); ?>%</span>
+				<div class="lk-hero-card lk-hero-card--stat">
+					<div class="lk-hero-head">
+						<span class="lk-hero-icon dashicons dashicons-clock" aria-hidden="true"></span>
+						<h3><?php esc_html_e( 'Recent Avg (5)', 'lovekin' ); ?></h3>
+					</div>
+					<div class="lk-hero-body">
+						<span class="lk-hero-value" data-lk="hero-recent"><?php echo esc_html( number_format_i18n( $averages['recent'], 1 ) ); ?>%</span>
+					</div>
 				</div>
 			</div>
 

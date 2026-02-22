@@ -382,6 +382,21 @@
 	border-bottom: 1px solid var(--lk-border);
 }
 
+.lk-table th {
+	font-size: 12px;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--lk-muted);
+}
+
+.lk-table tbody tr:nth-child(odd) {
+	background: #f8fafc;
+}
+
+.lk-table tbody tr:hover {
+	background: #eef2ff;
+}
+
 .lk-report-hero {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -396,8 +411,48 @@
 	box-shadow: var(--lk-shadow-sm);
 }
 
+.lk-hero-card--stat {
+	display: flex;
+	flex-direction: column;
+	gap: var(--lk-space-3);
+	min-height: 120px;
+}
+
+.lk-hero-head {
+	display: flex;
+	align-items: center;
+	gap: var(--lk-space-2);
+}
+
+.lk-hero-head h3 {
+	margin: 0;
+	font-size: 12px;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--lk-muted);
+}
+
+.lk-hero-icon {
+	width: 36px;
+	height: 36px;
+	border-radius: 50%;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(59, 130, 246, 0.12);
+	color: var(--lk-primary);
+	font-size: 18px;
+}
+
+.lk-hero-body {
+	display: flex;
+	align-items: baseline;
+	gap: var(--lk-space-2);
+	flex-wrap: wrap;
+}
+
 .lk-hero-value {
-	font-size: 26px;
+	font-size: 28px;
 	font-weight: 700;
 }
 
@@ -431,6 +486,12 @@
 .lk-remark-form {
 	display: grid;
 	gap: var(--lk-space-2);
+}
+
+.lk-remark-form .lk-button {
+	justify-self: flex-end;
+	padding: 6px 14px;
+	font-size: 13px;
 }
 
 .lk-question {
@@ -891,6 +952,10 @@
 	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 	gap: var(--lk-space-3);
 	margin-bottom: var(--lk-space-4);
+	padding: var(--lk-space-3);
+	background: #fff;
+	border: 1px solid var(--lk-border);
+	border-radius: var(--lk-radius-md);
 }
 
 .lk-trend {
@@ -898,15 +963,26 @@
 	align-items: center;
 	gap: 6px;
 	font-size: 12px;
-	margin-top: 6px;
+	padding: 2px 8px;
+	border-radius: var(--lk-radius-full);
+	margin-top: 0;
+	font-weight: 600;
 }
 
 .lk-trend--up {
 	color: var(--lk-success);
+	background: rgba(16, 185, 129, 0.12);
 }
 
 .lk-trend--down {
 	color: var(--lk-danger);
+	background: rgba(239, 68, 68, 0.12);
+}
+
+.lk-trend .dashicons {
+	font-size: 14px;
+	width: 14px;
+	height: 14px;
 }
 
 .lk-timeline {
