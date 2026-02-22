@@ -458,7 +458,12 @@ class LoveKin_Shortcodes {
 				$avatar_url = $avatar_meta;
 			}
 		}
-		$status = in_array( 'lk_primary', (array) $user->roles, true ) ? 'Primary' : 'Secondary';
+		$status = 'Secondary';
+		if ( in_array( 'administrator', (array) $user->roles, true ) ) {
+			$status = 'Admin';
+		} elseif ( in_array( 'lk_primary', (array) $user->roles, true ) ) {
+			$status = 'Primary';
+		}
 		$profile_attempts = LoveKin_Reports::get_user_attempts( $user_id );
 		$profile_average = 0;
 		if ( ! empty( $profile_attempts ) ) {
@@ -497,7 +502,7 @@ class LoveKin_Shortcodes {
 						</div>
 						<div>
 							<h3><?php echo esc_html( $user->display_name ); ?></h3>
-							<span class="lk-badge <?php echo 'Primary' === $status ? 'lk-badge--primary' : 'lk-badge--success'; ?>"><?php echo esc_html( $status ); ?></span>
+							<span class="lk-badge <?php echo ( 'Primary' === $status || 'Admin' === $status ) ? 'lk-badge--primary' : 'lk-badge--success'; ?>"><?php echo esc_html( $status ); ?></span>
 						</div>
 					</div>
 					<div class="lk-profile-meta">
