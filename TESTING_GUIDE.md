@@ -42,6 +42,17 @@ For each failure, capture:
 3. What you expected instead
 4. URL shown in browser
 
+Use the included sample tracker file:
+1. Open `TEST_TRACKER_TEMPLATE.xlsx` in Excel, Numbers, or Google Sheets (`TEST_TRACKER_TEMPLATE.csv` is also included if needed)
+2. Save a copy as `TEST_TRACKER_RUN_<date>.xlsx` (example: `TEST_TRACKER_RUN_2026-03-01.xlsx`)
+3. Fill one row per test case
+4. Set `Status` to `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN`
+5. Add screenshot file names in `Screenshot File` for every `FAIL`
+
+Simple tracking rule:
+1. If a test is blocked because of a previous bug, mark it `BLOCKED` and explain in `Actual Result`
+2. Keep the `Expected Result` text unchanged so anyone can compare easily
+
 ## Test Run Order
 
 ## 1. Basic access check
