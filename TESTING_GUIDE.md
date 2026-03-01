@@ -43,11 +43,13 @@ For each failure, capture:
 4. URL shown in browser
 
 Use the included sample tracker file:
-1. Open `TEST_TRACKER_TEMPLATE.xlsx` in Excel, Numbers, or Google Sheets (`TEST_TRACKER_TEMPLATE.csv` is also included if needed)
-2. Save a copy as `TEST_TRACKER_RUN_<date>.xlsx` (example: `TEST_TRACKER_RUN_2026-03-01.xlsx`)
-3. Fill one row per test case
-4. Set `Status` to `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN`
-5. Add screenshot file names in `Screenshot File` for every `FAIL`
+1. Shared tracker link: `https://docs.google.com/spreadsheets/d/1PdtH6BIRfaL9Zc-jf2XT2w_wcgThfytrXNkVBD6h10o/edit?usp=sharing`
+2. Use the shared tracker for team testing where possible
+3. If needed, open `TEST_TRACKER_TEMPLATE.xlsx` in Excel, Numbers, or Google Sheets (`TEST_TRACKER_TEMPLATE.csv` is also included)
+4. Save a copy as `TEST_TRACKER_RUN_<date>.xlsx` (example: `TEST_TRACKER_RUN_2026-03-01.xlsx`)
+5. Fill one row per test case
+6. Set `Status` to `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN`
+7. Add screenshot file names in `Screenshot File` for every `FAIL`
 
 Simple tracking rule:
 1. If a test is blocked because of a previous bug, mark it `BLOCKED` and explain in `Actual Result`
