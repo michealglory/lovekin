@@ -1,481 +1,323 @@
-# LoveKin Plugin Testing Guide
+# LoveKin Plugin Test Guide (Non-Technical)
 
-## 1. Purpose
-This document guides QA testers through a full manual test of the LoveKin plugin before release.
+## Who this is for
+This guide is for testers who are not developers.
 
-Goals:
-1. Verify all major features work end-to-end.
-2. Verify role/capability boundaries (admin vs primary vs secondary).
-3. Verify recent fixes (auth redirects/notices, documents/archive reliability/privacy, demo generate/erase tools).
-4. Catch regressions in security, UX, and data integrity.
+You do not need code tools or database access.
+You only need a browser and test user accounts.
 
-## 2. Scope
-In scope:
-1. Plugin activation and setup.
-2. Roles and permissions.
-3. Admin menus and settings.
-4. Login/registration/logout/reset-password integration.
-5. Dashboard tabs and protected-page behavior.
-6. Courses and assessments.
-7. Reports and remarks.
-8. Funding requests.
-9. Documents library (admin upload/manage, member download).
-10. Archive (member-owned private uploads only).
-11. Tools: Generate Demo Data + Erase Demo Content.
+## Goal
+Confirm the plugin is ready for real users by checking:
+1. Login and registration
+2. Dashboard access and navigation
+3. Profile updates
+4. Documents and Archive
+5. Funding flow
+6. Admin tools (Generate and Erase demo data)
 
-Out of scope:
-1. Performance/load testing.
-2. Third-party plugin/theme conflicts beyond smoke checks.
-3. Automated browser testing scripts.
+## Estimated time
+60 to 90 minutes.
 
-## 3. Environment and Prerequisites
-Use this baseline unless project lead specifies otherwise:
-1. WordPress site: `http://localhost/lovekin`
-2. Plugin installed and activated from ZIP.
-3. Permalinks enabled (save once in WP settings).
-4. `WP_DEBUG` enabled in local test environment.
-5. Access to:
-   - WordPress admin
-   - Browser dev tools
-   - Database viewer (phpMyAdmin or equivalent)
-   - PHP log: `/Applications/XAMPP/xamppfiles/logs/php_error_log`
+## What you need before you start
+1. Site URL: `http://localhost/lovekin`
+2. One admin account
+3. One primary member account
+4. Two secondary member accounts
+5. These pages should already exist:
+   - Login page
+   - Register page
+   - Dashboard page
 
-## 4. Required Test Pages and Shortcodes
-Create these pages (or verify they already exist):
-1. Login page: `[lovekin_login]`
-2. Register page: `[lovekin_register]`
-3. Dashboard page: `[lovekin_dashboard]`
-4. Optional standalone pages:
-   - Documents page: `[lovekin_documents]`
-   - Archive page: `[lovekin_archive]`
-   - Profile page: `[lovekin_profile]`
-   - Funding page: `[lovekin_funding_request]`
-   - Reports page: `[lovekin_report]`
+If any account/page is missing, ask the project owner before starting.
 
-In `LoveKin > Settings > Authentication Pages`:
-1. Set Login Page.
-2. Set Register Page.
-3. Set Dashboard Page.
-4. Save settings.
+## How to record results
+For each test, mark:
+1. `PASS` if result matches expected behavior
+2. `FAIL` if result is different
+3. Add screenshot for every failure
 
-## 5. Test Accounts
-Prepare:
-1. Admin user (WordPress administrator).
-2. One `lk_primary` user.
-3. Two `lk_secondary` users.
-4. Optional non-member subscriber for negative checks.
+For each failure, capture:
+1. What you clicked
+2. What happened
+3. What you expected instead
+4. URL shown in browser
 
-If role users do not exist, create in WP admin and assign roles manually.
+## Test Run Order
 
-## 6. Quick Smoke Test (10-15 mins)
-Run this first:
-1. Activate plugin.
-2. Verify LoveKin menu appears in admin.
-3. Open `LoveKin > Tools`, generate demo data.
-4. Visit login page, sign in as one demo member.
-5. Confirm dashboard loads and tabs render.
-6. Open Documents tab and confirm shared library section loads.
-7. Open Archive tab and upload a supported file.
-8. Download uploaded archive file.
-9. Logout and verify redirect/notice behavior.
-
-Pass criteria:
-1. No blank pages.
-2. No PHP fatals/notices blocking flow.
-3. Core navigation and forms usable.
-
-## 7. Detailed Test Cases
-
-## A. Installation and Data Model
-### A1. Plugin activation
+## 1. Basic access check
+### 1.1 LoveKin admin menu
 Steps:
-1. Deactivate plugin.
-2. Reactivate plugin.
-3. Visit any LoveKin admin page.
+1. Login as admin
+2. Open WordPress admin sidebar
+3. Find `LoveKin`
 
 Expected:
-1. No activation errors.
-2. Required DB tables exist:
-   - `<prefix>lk_relationships`
-   - `<prefix>lk_attempts`
-   - `<prefix>lk_funding_requests`
-   - `<prefix>lk_documents`
-   - `<prefix>lk_archive_files`
-3. Roles `lk_primary` and `lk_secondary` exist.
+1. LoveKin menu is visible
+2. Submenus are visible (Dashboard, Courses, Assessments, Relationships, Reports, Funding Requests, Documents, Settings, Tools)
 
-### A2. Admin menus
+### 1.2 Frontend pages load
 Steps:
-1. Login as admin.
-2. Open LoveKin sidebar.
+1. Open login page
+2. Open register page
+3. Open dashboard page while logged out
 
 Expected:
-1. Menus visible: Dashboard, Courses, Assessments, Relationships, Reports, Funding Requests, Documents, Settings, Tools.
+1. Login page loads normally
+2. Register page loads normally
+3. Dashboard page redirects to login with a short message asking user to log in
 
-## B. Roles and Permissions
-### B1. Member permissions
+## 2. Registration and login
+### 2.1 Register a new user
 Steps:
-1. Login as secondary.
-2. Attempt access to admin-only pages (LoveKin Settings/Tools/Documents admin).
+1. Go to register page
+2. Fill all fields:
+   - First Name
+   - Last Name
+   - Username
+   - Email
+   - Phone Number
+   - Occupation
+   - City
+   - State
+   - Country
+   - Password
+   - Confirm Password
+3. Submit form
 
 Expected:
-1. Member can use frontend dashboard features.
-2. Member cannot access admin-only pages/actions.
+1. Registration succeeds
+2. User is sent to login page
+3. Success message appears
+4. User is not auto-logged in
 
-### B2. Primary vs secondary report access
-Steps:
-1. Login as primary.
-2. Open reports in dashboard.
-3. Login as secondary.
-4. Open reports in dashboard.
-
-Expected:
-1. Primary can view assigned members and remark functionality where applicable.
-2. Secondary can view own report data only.
-
-## C. Settings
-### C1. Authentication page selectors
-Steps:
-1. Set login/register/dashboard page IDs in settings.
-2. Save.
-3. Clear selectors to 0.
-4. Save again.
+### 2.2 Register validation checks
+Run each check one at a time:
+1. Leave required fields empty and submit
+2. Use weak password and submit
+3. Use different password and confirm password
+4. Try an existing username/email
 
 Expected:
-1. Save succeeds each time.
-2. With IDs set, those pages are used for redirects.
-3. With IDs cleared, shortcode auto-discovery fallback works.
+1. Clear error message appears
+2. No blank page
+3. Errors do not expose private account details
 
-### C2. Upload settings
+### 2.3 Login success and failure
 Steps:
-1. Set allowed types and quotas.
-2. Save.
-3. Try upload with disallowed type and oversized files in Documents and Archive.
+1. Login with valid user
+2. Logout
+3. Login with wrong password
 
 Expected:
-1. Settings persist.
-2. Type/size/quota validations trigger correct user-facing errors.
+1. Valid login goes to dashboard
+2. Wrong password shows a clear error
+3. No blank page
 
-## D. Authentication and Access Control
-### D1. Registration success flow
+### 2.4 Forgot password and remember me
 Steps:
-1. Visit register page logged out.
-2. Submit valid values for:
-   - first name, last name
-   - username, email
-   - phone number, occupation
-   - city, state, country
-   - password + confirm
+1. On login page, click `Forgot password?`
+2. Complete reset request
+3. On login page, check visual alignment of `Remember me` checkbox and text
 
 Expected:
-1. Account created.
-2. New user gets default secondary role.
-3. Redirect to login page with success notice.
-4. User is not auto-logged-in.
+1. Forgot password flow opens WordPress reset process
+2. Message is shown after request
+3. Remember-me checkbox and label are aligned and readable
 
-### D2. Registration validation and anti-enumeration
+## 3. Access control and redirects
+### 3.1 Protected pages
 Steps:
-1. Submit missing required fields.
-2. Submit weak password.
-3. Submit password mismatch.
-4. Submit duplicate email/username.
+1. While logged out, open dashboard/documents/archive pages directly
+2. Login from redirected login page
 
 Expected:
-1. Form shows generic safe failure messages.
-2. No explicit disclosure of whether specific email exists.
+1. Logged-out users are redirected to login
+2. Temporary message explains login is required
+3. After login, dashboard opens correctly
 
-### D3. Login and redirect policy
+### 3.2 Login/Register pages while already logged in
 Steps:
-1. Login with valid credentials from login shortcode page.
-2. Login with invalid password.
+1. Login as member
+2. Open login page URL directly
+3. Open register page URL directly
 
 Expected:
-1. Valid login always redirects to configured dashboard page.
-2. Invalid login shows clear error on login page.
-3. No blank response page.
+1. User is redirected to dashboard
 
-### D4. Remember me, forgot password, logout
+## 4. Profile tests
+### 4.1 Update profile fields
 Steps:
-1. Check remember-me alignment and click behavior.
-2. Use forgot password link and complete WP reset flow.
-3. Logout via dashboard button/link.
+1. Login as member
+2. Open profile tab/page
+3. Update:
+   - Phone
+   - Occupation
+   - City
+   - State
+   - Country
+4. Save
+5. Refresh page
 
 Expected:
-1. Remember checkbox aligned with text.
-2. Forgot password uses WordPress reset system and non-enumerating messaging.
-3. Logout redirects and shows short-lived notice.
+1. Success message appears
+2. New values remain after refresh
 
-### D5. Protected pages/shortcodes
+## 5. Documents tests
+### 5.1 Admin uploads a document
 Steps:
-1. While logged out, navigate directly to protected page (dashboard/documents/archive page).
-2. Login from redirected page.
-3. Visit login/register pages while already logged in.
+1. Login as admin
+2. Open `LoveKin > Documents`
+3. Upload a valid file
 
 Expected:
-1. Logged-out user redirected to login with temporary `login_required` notice.
-2. Logged-in user accessing login/register is redirected to dashboard.
-3. Notice auto-hides and URL query params are cleaned up.
+1. Success message appears
+2. File appears in admin library list
 
-## E. Profile
-### E1. Profile update
+### 5.2 Admin validation checks
 Steps:
-1. Login as member.
-2. Open profile tab/page.
-3. Update phone, occupation, city/state/country, and optional avatar.
+1. Upload unsupported file type
+2. Upload too-large file (if possible)
 
 Expected:
-1. Save succeeds with confirmation.
-2. Updated data persists and displays correctly after refresh/re-login.
+1. Clear error message appears for each invalid case
 
-## F. Courses and Assessments
-### F1. Course publish validation
+### 5.3 Member can view/download documents
 Steps:
-1. Admin creates new course without material URL and tries publish.
-2. Add material URL and publish again.
+1. Login as primary member and open dashboard documents tab
+2. Download a document
+3. Repeat as secondary member
 
 Expected:
-1. Course without material is prevented from publish and stays draft with notice.
-2. Course publishes successfully once material URL is present.
+1. Both logged-in member roles can see shared library
+2. Download works
 
-### F2. Assessment linkage validation
+## 6. Archive tests (private user files)
+### 6.1 Upload and manage own archive file
 Steps:
-1. Admin creates assessment without linking course and publishes.
-2. Link a course and publish.
+1. Login as Secondary User A
+2. Open Archive tab/page
+3. Upload a valid file
+4. Download uploaded file
+5. Delete uploaded file
 
 Expected:
-1. Assessment is forced back to draft if no linked course.
-2. Publishes after linking course.
+1. Upload success message appears
+2. File appears in list
+3. Download works
+4. Delete works
 
-### F3. Assessment submission
+### 6.2 Archive privacy check between users
 Steps:
-1. Login as member.
-2. Open course/assessment and submit answers.
+1. Login as Secondary User A and upload file
+2. Logout
+3. Login as Secondary User B
+4. Open Archive tab/page
 
 Expected:
-1. Attempt row is recorded.
-2. Score/result view appears.
-3. Latest attempt can be reopened.
+1. User B does not see User A file
+2. User B cannot access User A archive content
 
-## G. Reports and Remarks
-### G1. Report visibility
+### 6.3 Archive validation checks
 Steps:
-1. Secondary user opens report.
-2. Primary/admin opens report(s) including user filter where applicable.
+1. Try unsupported file type
+2. Try large file beyond limit
 
 Expected:
-1. Secondary sees own data only.
-2. Admin can filter users and view broader report data.
+1. Correct error message appears
+2. No blank page
 
-### G2. Remark update
+## 7. Funding tests
+### 7.1 Member submits funding request
 Steps:
-1. Save remark via AJAX path and non-AJAX fallback (if available).
+1. Login as member
+2. Open Funding tab/page
+3. Submit valid funding request
 
 Expected:
-1. Remark saves successfully.
-2. Success feedback shown without page break.
+1. Request is submitted
+2. Success message appears
+3. Request appears in member view/history
 
-## H. Funding Requests
-### H1. Member submission
+### 7.2 Admin reviews funding request
 Steps:
-1. Submit funding request with valid fields.
-2. Try invalid/missing values and disallowed file.
+1. Login as admin
+2. Open `LoveKin > Funding Requests`
+3. Approve or reject a request and add note
 
 Expected:
-1. Valid submission stored with `pending` status.
-2. Validation errors shown for invalid cases.
+1. Status update saves successfully
+2. Updated status is visible
 
-### H2. Admin review
+## 8. Reports tests
+### 8.1 View reports by role
 Steps:
-1. Admin opens Funding Requests.
-2. Approve/reject and add notes.
+1. Login as secondary and open report
+2. Login as primary and open report
+3. Login as admin and open report area
 
 Expected:
-1. Status and notes persist.
-2. Member report/dashboard reflects updated status.
+1. Secondary sees own report data
+2. Primary sees permitted member-related data
+3. Admin can access full report tools
 
-## I. Documents Library (Shared, Admin-Managed)
-### I1. Admin upload/manage
+## 9. Tools tests (Demo Data)
+### 9.1 Generate demo data
 Steps:
-1. Upload valid document in `LoveKin > Documents`.
-2. Upload disallowed type/oversized file.
-3. Delete a document.
+1. Login as admin
+2. Open `LoveKin > Tools`
+3. Click `Generate Demo Data`
 
 Expected:
-1. Success/error notices display clearly.
-2. Uploaded item appears in admin library list with metadata.
-3. Delete removes row and physical file.
+1. Success message appears
+2. Demo users list is shown
+3. No errors or blank page
 
-### I2. Member access
+### 9.2 Re-run generate demo data
 Steps:
-1. Login as primary and secondary.
-2. Open dashboard Documents tab/page.
-3. Download documents.
-4. Try document download while logged out.
+1. Click `Generate Demo Data` again
 
 Expected:
-1. All logged-in members can see/download library docs.
-2. Logged-out access is blocked.
+1. Action succeeds again
+2. No duplicate explosion or broken records
 
-## J. Archive (Private Member-Owned Files)
-### J1. Upload validations
+### 9.3 Erase demo content
 Steps:
-1. Upload valid file.
-2. Try unsupported type.
-3. Try oversized file.
-4. Exceed archive quota.
+1. Click `Erase Demo Content`
+2. Confirm the popup
 
 Expected:
-1. Correct success/error notice for each case.
-2. Usage bar and file list update correctly.
+1. Demo content is removed
+2. Success message appears
+3. Running erase again should still be safe (no crash)
 
-### J2. Ownership enforcement
-Steps:
-1. User A uploads files.
-2. User B logs in and attempts to list/download/delete User A file by URL/ID tampering.
-
-Expected:
-1. User B cannot access User A archive files.
-2. Only owner can list/download/delete own files.
-
-### J3. Storage/privacy hardening
-Steps:
-1. Inspect stored filenames and upload path.
-2. Attempt direct URL access to private archive file if URL is known.
+## 10. Visual and mobile checks
+Test these pages on desktop and mobile width:
+1. Login page
+2. Register page
+3. Dashboard tabs
+4. Documents section
+5. Archive section
 
 Expected:
-1. Stored filenames are randomized.
-2. Files are under `wp-content/uploads/lovekin/private/archive/{user_id}`.
-3. `index.php`/`.htaccess` protections exist in private folders (best effort on Apache).
+1. Text is readable
+2. Buttons are usable
+3. No overlapping/jumbled controls
+4. No major layout break
 
-## K. Tools: Demo Data
-### K1. Generate demo data
-Steps:
-1. Open `LoveKin > Tools`.
-2. Click `Generate Demo Data`.
+## 11. Final sign-off checklist
+Mark each as Yes/No:
+1. Registration works with required fields
+2. Login works and redirects correctly
+3. Forgot password works
+4. Protected pages redirect logged-out users
+5. Profile save works for phone/location/occupation
+6. Admin can upload/manage documents
+7. Members can download documents
+8. Archive upload/download/delete works
+9. Archive privacy between users works
+10. Funding submit and review work
+11. Tools generate/erase demo content works
+12. No blank pages in tested flows
 
-Expected:
-1. Existing demo data is erased first.
-2. Exactly 6 records are created per core dataset:
-   - users, courses, assessments, attempts, relationships, funding requests.
-3. Success notice shows created counts.
-
-### K2. Re-run generator
-Steps:
-1. Click `Generate Demo Data` again immediately.
-
-Expected:
-1. Counts remain exactly 6 per dataset (no growth above 6).
-
-### K3. Erase demo content
-Steps:
-1. Click `Erase Demo Content`.
-2. Confirm browser confirmation modal.
-
-Expected:
-1. Only demo-tagged and demo-linked records are removed.
-2. Non-demo records remain intact.
-3. Re-running erase with no demo data shows neutral success message.
-
-### K4. SQL verification (optional but recommended)
-Use your DB prefix instead of `wp_`.
-
-1. Demo users:
-```sql
-SELECT COUNT(*) AS demo_users
-FROM wp_usermeta
-WHERE meta_key = 'lk_demo_user' AND meta_value = '1';
-```
-
-2. Demo courses:
-```sql
-SELECT COUNT(*) AS demo_courses
-FROM wp_posts p
-JOIN wp_postmeta pm ON pm.post_id = p.ID
-WHERE p.post_type = 'lk_course'
-  AND p.post_status <> 'trash'
-  AND pm.meta_key = 'lk_demo_content'
-  AND pm.meta_value = '1';
-```
-
-3. Demo assessments:
-```sql
-SELECT COUNT(*) AS demo_assessments
-FROM wp_posts p
-JOIN wp_postmeta pm ON pm.post_id = p.ID
-WHERE p.post_type = 'lk_assessment'
-  AND p.post_status <> 'trash'
-  AND pm.meta_key = 'lk_demo_content'
-  AND pm.meta_value = '1';
-```
-
-4. Demo-linked attempts:
-```sql
-SELECT COUNT(*) AS demo_attempts
-FROM wp_lk_attempts
-WHERE user_id IN (
-  SELECT user_id FROM wp_usermeta WHERE meta_key = 'lk_demo_user' AND meta_value = '1'
-);
-```
-
-5. Demo-linked relationships:
-```sql
-SELECT COUNT(*) AS demo_relationships
-FROM wp_lk_relationships
-WHERE primary_user_id IN (
-  SELECT user_id FROM wp_usermeta WHERE meta_key = 'lk_demo_user' AND meta_value = '1'
-)
-OR secondary_user_id IN (
-  SELECT user_id FROM wp_usermeta WHERE meta_key = 'lk_demo_user' AND meta_value = '1'
-);
-```
-
-6. Demo-linked funding:
-```sql
-SELECT COUNT(*) AS demo_funding
-FROM wp_lk_funding_requests
-WHERE user_id IN (
-  SELECT user_id FROM wp_usermeta WHERE meta_key = 'lk_demo_user' AND meta_value = '1'
-);
-```
-
-## L. UI/Responsive Checks
-Test at:
-1. Desktop (>=1280px)
-2. Tablet (~768px)
-3. Mobile (~390px)
-
-Verify:
-1. Login/register layout and spacing.
-2. Dashboard tab menu behavior.
-3. Documents cards and filters.
-4. Archive upload panel/table responsiveness.
-5. Buttons and alerts are readable and aligned.
-
-## M. Error Logs and Regression Check
-After full run:
-1. Inspect PHP log:
-   - `/Applications/XAMPP/xamppfiles/logs/php_error_log`
-2. Confirm no new fatals/warnings from LoveKin flows.
-3. Specifically verify no `move_uploaded_file ... No such file or directory` for:
-   - archive uploads
-   - documents uploads
-4. Verify no `Cannot modify header information` from auth flows.
-
-## 8. Defect Reporting Template
-For each defect, capture:
-1. Test case ID
-2. Environment (browser, WP version, PHP version)
-3. Preconditions
-4. Steps to reproduce
-5. Actual result
-6. Expected result
-7. Screenshot/video
-8. Console/network logs (if relevant)
-9. Severity (Blocker/High/Medium/Low)
-
-## 9. Exit Criteria (Release Readiness)
-Release candidate passes when:
-1. All High/Blocker issues are closed.
-2. Core flows pass:
-   - auth, dashboard, profile, courses/assessments, reports, funding, documents, archive, tools.
-3. Demo generate/erase counts and safety checks pass.
-4. No critical PHP errors introduced in logs.
+Release recommendation:
+1. Approve release only if all critical items above are `Yes`.
