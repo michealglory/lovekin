@@ -42,6 +42,13 @@ class LoveKin_Settings {
 		);
 		update_option( 'lovekin_upload_settings', $settings );
 
+		$auth_settings = array(
+			'login_page_id'    => self::sanitize_page_id( $_POST['login_page_id'] ?? 0 ),
+			'register_page_id' => self::sanitize_page_id( $_POST['register_page_id'] ?? 0 ),
+			'dashboard_page_id'=> self::sanitize_page_id( $_POST['dashboard_page_id'] ?? 0 ),
+		);
+		update_option( 'lovekin_auth_settings', $auth_settings );
+
 		wp_safe_redirect( admin_url( 'admin.php?page=lovekin-settings&lk_saved=1' ) );
 		exit;
 	}
@@ -53,6 +60,14 @@ class LoveKin_Settings {
 
 		$bands    = get_option( 'lovekin_remark_bands', array() );
 		$settings = get_option( 'lovekin_upload_settings', array() );
+		$auth_settings = get_option( 'lovekin_auth_settings', array() );
+		$auth_settings = is_array( $auth_settings ) ? $auth_settings : array();
+		$pages = get_pages(
+			array(
+				'sort_column' => 'post_title',
+				'post_status' => 'publish',
+			)
+		);
 		?>
 		<div class="wrap lk-admin-page">
 			<h1><?php esc_html_e( 'LoveKin Settings', 'lovekin' ); ?></h1>
@@ -73,21 +88,70 @@ class LoveKin_Settings {
 					<?php endforeach; ?>
 				</div>
 
-				<div class="lk-admin-card">
-					<h2><?php esc_html_e( 'Upload Settings', 'lovekin' ); ?></h2>
-					<label><?php esc_html_e( 'Allowed File Types (comma separated)', 'lovekin' ); ?></label>
+					<div class="lk-admin-card">
+						<h2><?php esc_html_e( 'Upload Settings', 'lovekin' ); ?></h2>
+						<label><?php esc_html_e( 'Allowed File Types (comma separated)', 'lovekin' ); ?></label>
 					<input type="text" name="allowed_types" class="widefat" value="<?php echo esc_attr( implode( ',', $settings['allowed_types'] ?? array() ) ); ?>" />
 					<label><?php esc_html_e( 'Max File Size (MB)', 'lovekin' ); ?></label>
 					<input type="number" name="max_file_size_mb" value="<?php echo esc_attr( $settings['max_file_size_mb'] ?? 10 ); ?>" />
 					<label><?php esc_html_e( 'Archive Quota (MB)', 'lovekin' ); ?></label>
 					<input type="number" name="archive_quota_mb" value="<?php echo esc_attr( $settings['archive_quota_mb'] ?? 100 ); ?>" />
-					<label><?php esc_html_e( 'Documents Quota (MB)', 'lovekin' ); ?></label>
-					<input type="number" name="document_quota_mb" value="<?php echo esc_attr( $settings['document_quota_mb'] ?? 250 ); ?>" />
-				</div>
+						<label><?php esc_html_e( 'Documents Quota (MB)', 'lovekin' ); ?></label>
+						<input type="number" name="document_quota_mb" value="<?php echo esc_attr( $settings['document_quota_mb'] ?? 250 ); ?>" />
+					</div>
 
-				<button type="submit" class="button button-primary"><?php esc_html_e( 'Save Settings', 'lovekin' ); ?></button>
-			</form>
-		</div>
-		<?php
+					<div class="lk-admin-card">
+						<h2><?php esc_html_e( 'Authentication Pages', 'lovekin' ); ?></h2>
+						<p class="description"><?php esc_html_e( 'Select your Login, Register, and Dashboard pages. If left blank, LoveKin will auto-detect pages by shortcode.', 'lovekin' ); ?></p>
+
+						<label for="lk-login-page-id"><?php esc_html_e( 'Login Page', 'lovekin' ); ?></label>
+						<select id="lk-login-page-id" name="login_page_id" class="widefat">
+							<option value="0"><?php esc_html_e( 'Auto-detect from [lovekin_login]', 'lovekin' ); ?></option>
+							<?php foreach ( $pages as $page ) : ?>
+								<option value="<?php echo esc_attr( $page->ID ); ?>" <?php selected( absint( $auth_settings['login_page_id'] ?? 0 ), $page->ID ); ?>>
+									<?php echo esc_html( $page->post_title ); ?>
+								</option>
+							<?php endforeach; ?>
+						</select>
+
+						<label for="lk-register-page-id"><?php esc_html_e( 'Register Page', 'lovekin' ); ?></label>
+						<select id="lk-register-page-id" name="register_page_id" class="widefat">
+							<option value="0"><?php esc_html_e( 'Auto-detect from [lovekin_register]', 'lovekin' ); ?></option>
+							<?php foreach ( $pages as $page ) : ?>
+								<option value="<?php echo esc_attr( $page->ID ); ?>" <?php selected( absint( $auth_settings['register_page_id'] ?? 0 ), $page->ID ); ?>>
+									<?php echo esc_html( $page->post_title ); ?>
+								</option>
+							<?php endforeach; ?>
+						</select>
+
+						<label for="lk-dashboard-page-id"><?php esc_html_e( 'Dashboard Page', 'lovekin' ); ?></label>
+						<select id="lk-dashboard-page-id" name="dashboard_page_id" class="widefat">
+							<option value="0"><?php esc_html_e( 'Auto-detect from [lovekin_dashboard]', 'lovekin' ); ?></option>
+							<?php foreach ( $pages as $page ) : ?>
+								<option value="<?php echo esc_attr( $page->ID ); ?>" <?php selected( absint( $auth_settings['dashboard_page_id'] ?? 0 ), $page->ID ); ?>>
+									<?php echo esc_html( $page->post_title ); ?>
+								</option>
+							<?php endforeach; ?>
+						</select>
+					</div>
+
+					<button type="submit" class="button button-primary"><?php esc_html_e( 'Save Settings', 'lovekin' ); ?></button>
+				</form>
+			</div>
+			<?php
+	}
+
+	private static function sanitize_page_id( $raw_page_id ) {
+		$page_id = absint( $raw_page_id );
+		if ( ! $page_id ) {
+			return 0;
+		}
+
+		$page = get_post( $page_id );
+		if ( ! $page || 'page' !== $page->post_type || 'publish' !== $page->post_status ) {
+			return 0;
+		}
+
+		return $page_id;
 	}
 }

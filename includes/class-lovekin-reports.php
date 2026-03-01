@@ -7,6 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class LoveKin_Reports {
 	public static function init() {
 		add_action( 'admin_post_lk_update_remark', array( __CLASS__, 'handle_update_remark' ) );
+		add_action( 'wp_ajax_lk_update_remark', array( __CLASS__, 'handle_update_remark_ajax' ) );
 	}
 
 	public static function get_remark_for_score( $score ) {
@@ -43,8 +44,72 @@ class LoveKin_Reports {
 		}
 
 		set_transient( 'lk_remark_saved_' . get_current_user_id(), 1, 30 );
-		wp_safe_redirect( wp_get_referer() ? wp_get_referer() : admin_url( 'admin.php?page=lovekin-reports' ) );
+		$redirect_url = wp_get_referer() ? wp_get_referer() : admin_url( 'admin.php?page=lovekin-reports' );
+		if ( $attempt_id ) {
+			$redirect_url = add_query_arg( 'lk_saved_attempt', $attempt_id, $redirect_url );
+		}
+		wp_safe_redirect( $redirect_url );
 		exit;
+	}
+
+	public static function handle_update_remark_ajax() {
+		if ( ! is_user_logged_in() ) {
+			wp_send_json_error(
+				array(
+					'message' => __( 'Please log in and try again.', 'lovekin' ),
+				),
+				401
+			);
+		}
+
+		if ( ! current_user_can( 'lk_edit_remarks' ) && ! current_user_can( 'lk_view_all_reports' ) ) {
+			wp_send_json_error(
+				array(
+					'message' => __( 'Permission denied.', 'lovekin' ),
+				),
+				403
+			);
+		}
+
+		check_ajax_referer( 'lk_update_remark_ajax', 'nonce' );
+
+		$attempt_id  = isset( $_POST['attempt_id'] ) ? absint( $_POST['attempt_id'] ) : 0;
+		$remark_text = isset( $_POST['remark'] ) ? wp_kses_post( wp_unslash( $_POST['remark'] ) ) : '';
+
+		if ( ! $attempt_id ) {
+			wp_send_json_error(
+				array(
+					'message' => __( 'Invalid attempt.', 'lovekin' ),
+				),
+				400
+			);
+		}
+
+		global $wpdb;
+		$table = $wpdb->prefix . 'lk_attempts';
+		$updated = $wpdb->update(
+			$table,
+			array( 'remark' => $remark_text ),
+			array( 'id' => $attempt_id ),
+			array( '%s' ),
+			array( '%d' )
+		);
+
+		if ( false === $updated ) {
+			wp_send_json_error(
+				array(
+					'message' => __( 'Unable to save remark. Please try again.', 'lovekin' ),
+				),
+				500
+			);
+		}
+
+		wp_send_json_success(
+			array(
+				'attempt_id' => $attempt_id,
+				'message'    => __( 'Remark saved.', 'lovekin' ),
+			)
+		);
 	}
 
 	public static function get_user_attempts( $user_id ) {
@@ -204,45 +269,51 @@ class LoveKin_Reports {
 
 			<div class="lk-card">
 				<h3><?php esc_html_e( 'Attempts', 'lovekin' ); ?></h3>
-				<table class="lk-table">
-					<thead>
-						<tr>
-							<th><?php esc_html_e( 'Course', 'lovekin' ); ?></th>
-							<th><?php esc_html_e( 'Score', 'lovekin' ); ?></th>
-							<th><?php esc_html_e( 'Date', 'lovekin' ); ?></th>
-							<th><?php esc_html_e( 'Remark', 'lovekin' ); ?></th>
-						</tr>
-					</thead>
-					<tbody>
-						<?php if ( empty( $attempts ) ) : ?>
-							<tr><td colspan="4"><?php esc_html_e( 'No attempts recorded yet.', 'lovekin' ); ?></td></tr>
-						<?php else : ?>
-							<?php foreach ( array_reverse( $attempts ) as $attempt ) :
-								$course = get_post( $attempt->course_id );
-								$band   = self::get_remark_for_score( $attempt->score );
-								?>
-								<tr data-course="<?php echo esc_attr( $attempt->course_id ); ?>" data-score="<?php echo esc_attr( $attempt->score ); ?>" data-timestamp="<?php echo esc_attr( strtotime( $attempt->created_at ) ); ?>">
-									<td><?php echo esc_html( $course ? $course->post_title : __( 'Course', 'lovekin' ) ); ?></td>
-									<td><span class="lk-score-pill" style="--lk-score-color: <?php echo esc_attr( $band['color'] ); ?>;"><?php echo esc_html( number_format_i18n( $attempt->score, 1 ) ); ?>%</span></td>
-									<td><?php echo esc_html( mysql2date( 'M j, Y', $attempt->created_at ) ); ?></td>
-									<td>
-										<?php if ( $is_admin ) : ?>
-											<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="lk-remark-form">
-												<input type="hidden" name="action" value="lk_update_remark" />
-												<input type="hidden" name="attempt_id" value="<?php echo esc_attr( $attempt->id ); ?>" />
-												<?php wp_nonce_field( 'lk_update_remark' ); ?>
-												<textarea name="remark" rows="2" class="lk-input"><?php echo esc_textarea( $attempt->remark ? $attempt->remark : $band['remark'] ); ?></textarea>
-												<button type="submit" class="lk-button lk-button--ghost"><?php esc_html_e( 'Save', 'lovekin' ); ?></button>
-											</form>
-										<?php else : ?>
-											<?php echo esc_html( $attempt->remark ? $attempt->remark : $band['remark'] ); ?>
-										<?php endif; ?>
-									</td>
-								</tr>
-							<?php endforeach; ?>
-						<?php endif; ?>
-					</tbody>
-				</table>
+				<div class="lk-pagination-wrap" data-lk-pagination="attempts" data-lk-page-size="5">
+					<table class="lk-table lk-report-table">
+						<thead>
+							<tr>
+								<th><?php esc_html_e( 'Course', 'lovekin' ); ?></th>
+								<th><?php esc_html_e( 'Score', 'lovekin' ); ?></th>
+								<th><?php esc_html_e( 'Date', 'lovekin' ); ?></th>
+								<th><?php esc_html_e( 'Remark', 'lovekin' ); ?></th>
+							</tr>
+						</thead>
+						<tbody>
+							<?php if ( empty( $attempts ) ) : ?>
+								<tr><td colspan="4"><?php esc_html_e( 'No attempts recorded yet.', 'lovekin' ); ?></td></tr>
+							<?php else : ?>
+								<?php foreach ( array_reverse( $attempts ) as $attempt ) :
+									$course = get_post( $attempt->course_id );
+									$band   = self::get_remark_for_score( $attempt->score );
+									?>
+									<tr data-lk-page-row data-lk-filter-match="1" data-course="<?php echo esc_attr( $attempt->course_id ); ?>" data-score="<?php echo esc_attr( $attempt->score ); ?>" data-timestamp="<?php echo esc_attr( strtotime( $attempt->created_at ) ); ?>">
+										<td data-label="<?php esc_attr_e( 'Course', 'lovekin' ); ?>"><?php echo esc_html( $course ? $course->post_title : __( 'Course', 'lovekin' ) ); ?></td>
+										<td data-label="<?php esc_attr_e( 'Score', 'lovekin' ); ?>"><span class="lk-score-pill" style="--lk-score-color: <?php echo esc_attr( $band['color'] ); ?>;"><?php echo esc_html( number_format_i18n( $attempt->score, 1 ) ); ?>%</span></td>
+										<td data-label="<?php esc_attr_e( 'Date', 'lovekin' ); ?>"><?php echo esc_html( mysql2date( 'M j, Y', $attempt->created_at ) ); ?></td>
+										<td class="lk-cell-remark" data-label="<?php esc_attr_e( 'Remark', 'lovekin' ); ?>">
+											<?php if ( $is_admin ) : ?>
+												<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="lk-remark-form" data-lk-attempt-id="<?php echo esc_attr( $attempt->id ); ?>" data-lk-ajax="1">
+													<input type="hidden" name="action" value="lk_update_remark" />
+													<input type="hidden" name="attempt_id" value="<?php echo esc_attr( $attempt->id ); ?>" />
+													<?php wp_nonce_field( 'lk_update_remark' ); ?>
+													<input type="hidden" name="lk_ajax_nonce" value="<?php echo esc_attr( wp_create_nonce( 'lk_update_remark_ajax' ) ); ?>" />
+													<textarea name="remark" rows="2" class="lk-input"><?php echo esc_textarea( $attempt->remark ? $attempt->remark : $band['remark'] ); ?></textarea>
+													<div class="lk-remark-actions">
+														<span class="lk-inline-saved" hidden><?php esc_html_e( 'Saved', 'lovekin' ); ?></span>
+														<button type="submit" class="lk-button lk-button--ghost"><?php esc_html_e( 'Save', 'lovekin' ); ?></button>
+													</div>
+												</form>
+											<?php else : ?>
+												<?php echo esc_html( $attempt->remark ? $attempt->remark : $band['remark'] ); ?>
+											<?php endif; ?>
+										</td>
+									</tr>
+								<?php endforeach; ?>
+							<?php endif; ?>
+						</tbody>
+					</table>
+				</div>
 			</div>
 		</div>
 		<?php

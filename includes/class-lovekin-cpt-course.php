@@ -5,12 +5,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class LoveKin_CPT_Course {
+	private static $block_publish_notice = false;
+
 	public static function init() {
 		add_action( 'init', array( __CLASS__, 'register' ) );
 		add_action( 'add_meta_boxes', array( __CLASS__, 'meta_boxes' ) );
 		add_action( 'save_post_lk_course', array( __CLASS__, 'save_meta' ), 10, 2 );
 		add_action( 'rest_api_init', array( __CLASS__, 'register_meta' ) );
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_admin_assets' ) );
+		add_filter( 'wp_insert_post_data', array( __CLASS__, 'validate_publish_on_insert' ), 10, 2 );
+		add_filter( 'redirect_post_location', array( __CLASS__, 'append_publish_error_flag' ), 10, 2 );
+		add_filter( 'rest_pre_insert_lk_course', array( __CLASS__, 'validate_publish_on_rest' ), 10, 2 );
+		add_action( 'admin_notices', array( __CLASS__, 'maybe_render_material_notice' ) );
 	}
 
 	public static function register() {
@@ -92,7 +98,7 @@ class LoveKin_CPT_Course {
 		wp_nonce_field( 'lk_course_meta', 'lk_course_meta_nonce' );
 		$file_url = get_post_meta( $post->ID, '_lk_course_file_url', true );
 		?>
-		<p class="description"><?php esc_html_e( 'Add a PDF or resource URL for this course (e.g. media library file URL).', 'lovekin' ); ?></p>
+		<p class="description"><?php esc_html_e( 'Add a PDF or resource URL for this course (required before publishing).', 'lovekin' ); ?></p>
 		<input type="url" name="lk_course_file_url" class="widefat" value="<?php echo esc_url( $file_url ); ?>" placeholder="<?php esc_attr_e( 'https://example.com/course.pdf', 'lovekin' ); ?>" />
 		<button type="button" class="button" data-lk="course-file-select"><?php esc_html_e( 'Select File', 'lovekin' ); ?></button>
 		<?php
@@ -138,5 +144,115 @@ class LoveKin_CPT_Course {
 
 		$file_url = isset( $_POST['lk_course_file_url'] ) ? esc_url_raw( wp_unslash( $_POST['lk_course_file_url'] ) ) : '';
 		update_post_meta( $post_id, '_lk_course_file_url', $file_url );
+	}
+
+	private static function has_course_material_for_request( $post_id, $posted_value = null ) {
+		if ( null !== $posted_value ) {
+			if ( is_array( $posted_value ) ) {
+				return false;
+			}
+
+			$material = esc_url_raw( trim( (string) $posted_value ) );
+			return '' !== $material;
+		}
+
+		$saved_material = $post_id ? get_post_meta( $post_id, '_lk_course_file_url', true ) : '';
+		$saved_material = esc_url_raw( trim( (string) $saved_material ) );
+		return '' !== $saved_material;
+	}
+
+	public static function validate_publish_on_insert( $data, $postarr ) {
+		if ( empty( $data['post_type'] ) || 'lk_course' !== $data['post_type'] ) {
+			return $data;
+		}
+
+		if ( empty( $data['post_status'] ) || 'publish' !== $data['post_status'] ) {
+			return $data;
+		}
+
+		if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+			return $data;
+		}
+
+		$post_id = ! empty( $postarr['ID'] ) ? absint( $postarr['ID'] ) : 0;
+		$posted_value = null;
+		if ( isset( $_POST ) && array_key_exists( 'lk_course_file_url', $_POST ) ) {
+			$posted_value = wp_unslash( $_POST['lk_course_file_url'] );
+		}
+
+		if ( self::has_course_material_for_request( $post_id, $posted_value ) ) {
+			return $data;
+		}
+
+		self::$block_publish_notice = true;
+		$data['post_status']        = 'draft';
+
+		return $data;
+	}
+
+	public static function append_publish_error_flag( $location, $post_id ) {
+		if ( ! self::$block_publish_notice ) {
+			return $location;
+		}
+
+		if ( ! absint( $post_id ) ) {
+			self::$block_publish_notice = false;
+			return $location;
+		}
+
+		self::$block_publish_notice = false;
+		return add_query_arg( 'lk_course_material_error', '1', $location );
+	}
+
+	public static function validate_publish_on_rest( $prepared_post, $request ) {
+		if ( empty( $prepared_post->post_status ) || 'publish' !== $prepared_post->post_status ) {
+			return $prepared_post;
+		}
+
+		$post_id = 0;
+		if ( isset( $request['id'] ) ) {
+			$post_id = absint( $request['id'] );
+		} elseif ( ! empty( $prepared_post->ID ) ) {
+			$post_id = absint( $prepared_post->ID );
+		}
+
+		$posted_value = null;
+		$meta = $request->get_param( 'meta' );
+		if ( is_array( $meta ) && array_key_exists( '_lk_course_file_url', $meta ) ) {
+			$posted_value = $meta['_lk_course_file_url'];
+		} elseif ( null !== $request->get_param( '_lk_course_file_url' ) ) {
+			$posted_value = $request->get_param( '_lk_course_file_url' );
+		}
+
+		if ( self::has_course_material_for_request( $post_id, $posted_value ) ) {
+			return $prepared_post;
+		}
+
+		return new WP_Error(
+			'lk_course_material_required',
+			__( 'Course material is required before publishing. Add a course file URL and try again.', 'lovekin' ),
+			array( 'status' => 400 )
+		);
+	}
+
+	public static function maybe_render_material_notice() {
+		if ( ! is_admin() || ! current_user_can( 'edit_posts' ) ) {
+			return;
+		}
+
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		if ( ! $screen || 'lk_course' !== $screen->post_type ) {
+			return;
+		}
+
+		$show_notice = isset( $_GET['lk_course_material_error'] ) ? absint( wp_unslash( $_GET['lk_course_material_error'] ) ) : 0;
+		if ( 1 !== $show_notice ) {
+			return;
+		}
+		?>
+		<div class="notice notice-error is-dismissible">
+			<p><?php esc_html_e( 'Course material is required before publishing. Add a course file URL and publish again.', 'lovekin' ); ?></p>
+		</div>
+		<?php
 	}
 }

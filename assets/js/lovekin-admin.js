@@ -116,4 +116,90 @@ jQuery(function ($) {
 
 		frame.open();
 	});
+
+	function hasCourseMaterial() {
+		var value = $('input[name="lk_course_file_url"]').val();
+		return !!(value && String(value).trim().length);
+	}
+
+	function showCourseMaterialError() {
+		if ($('#lk-course-material-error').length) {
+			return;
+		}
+		var $notice = $(
+			'<div id="lk-course-material-error" class="notice notice-error is-dismissible">' +
+				'<p>Course material is required before publishing. Add a course file URL and publish again.</p>' +
+			'</div>'
+		);
+		$('.wrap h1').first().after($notice);
+	}
+
+	$(document).on('click', '#publish, .editor-post-publish-button', function (event) {
+		if (!$('body').hasClass('post-type-lk_course')) {
+			return;
+		}
+		if (hasCourseMaterial()) {
+			return;
+		}
+		event.preventDefault();
+		event.stopImmediatePropagation();
+		showCourseMaterialError();
+	});
+
+	function showInlineSaved($form) {
+		var $saved = $form.find('.lk-inline-saved');
+		if (!$saved.length) {
+			return;
+		}
+		var timer = $saved.data('lkHideTimer');
+		if (timer) {
+			clearTimeout(timer);
+		}
+		$saved.removeAttr('hidden').addClass('is-visible');
+		timer = setTimeout(function () {
+			$saved.removeClass('is-visible').attr('hidden', 'hidden');
+		}, 4000);
+		$saved.data('lkHideTimer', timer);
+	}
+
+	$(document).on('submit', '.lk-remark-form[data-lk-ajax="1"]', function (event) {
+		if (typeof ajaxurl === 'undefined') {
+			return;
+		}
+		event.preventDefault();
+
+		var $form = $(this);
+		var nonce = $form.find('input[name="lk_ajax_nonce"]').val();
+		if (!nonce) {
+			return;
+		}
+
+		var $button = $form.find('button[type="submit"]');
+		var originalText = $button.text();
+		$button.prop('disabled', true).text('Saving...');
+
+		$.post(ajaxurl, {
+			action: 'lk_update_remark',
+			nonce: nonce,
+			attempt_id: $form.find('input[name="attempt_id"]').val(),
+			remark: $form.find('textarea[name="remark"]').val()
+		})
+			.done(function (response) {
+				if (response && response.success) {
+					showInlineSaved($form);
+					return;
+				}
+				window.alert(response && response.data && response.data.message ? response.data.message : 'Unable to save remark. Please try again.');
+			})
+			.fail(function (xhr) {
+				var message = 'Unable to save remark. Please try again.';
+				if (xhr && xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) {
+					message = xhr.responseJSON.data.message;
+				}
+				window.alert(message);
+			})
+			.always(function () {
+				$button.prop('disabled', false).text(originalText || 'Save');
+			});
+	});
 });

@@ -15,10 +15,17 @@ class LoveKin_Shortcodes {
 		add_shortcode( 'lovekin_archive', array( __CLASS__, 'render_archive' ) );
 		add_shortcode( 'lovekin_login', array( __CLASS__, 'render_login_form' ) );
 		add_shortcode( 'lovekin_register', array( __CLASS__, 'render_register_form' ) );
+		add_shortcode( 'lovekin_protect', array( __CLASS__, 'render_protected_content' ) );
 
 		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'maybe_enqueue_assets' ) );
+		add_action( 'admin_post_lk_login', array( __CLASS__, 'handle_login_submission' ) );
+		add_action( 'admin_post_nopriv_lk_login', array( __CLASS__, 'handle_login_submission' ) );
+		add_action( 'admin_post_lk_register', array( __CLASS__, 'handle_register_submission' ) );
+		add_action( 'admin_post_nopriv_lk_register', array( __CLASS__, 'handle_register_submission' ) );
 		add_action( 'admin_post_lk_update_profile', array( __CLASS__, 'handle_profile_update' ) );
 		add_action( 'admin_post_nopriv_lk_update_profile', array( __CLASS__, 'block_guest_submission' ) );
+		add_action( 'template_redirect', array( __CLASS__, 'maybe_redirect_protected_page' ) );
+		add_filter( 'login_errors', array( __CLASS__, 'filter_wp_login_errors' ) );
 		add_filter( 'the_content', array( __CLASS__, 'append_assessment_to_content' ) );
 		add_filter( 'template_include', array( __CLASS__, 'assessment_template' ) );
 	}
@@ -55,7 +62,7 @@ class LoveKin_Shortcodes {
 	}
 
 	public static function block_guest_submission() {
-		wp_safe_redirect( wp_login_url() );
+		wp_safe_redirect( self::build_login_url_with_notice( 'login_required' ) );
 		exit;
 	}
 
@@ -70,10 +77,7 @@ class LoveKin_Shortcodes {
 		}
 
 		if ( is_singular( 'lk_assessment' ) ) {
-			wp_enqueue_style( 'dashicons' );
-			wp_enqueue_style( 'lovekin-public', LOVEKIN_PLUGIN_URL . 'assets/css/lovekin-public.css', array(), LOVEKIN_VERSION );
-			wp_enqueue_script( 'lovekin-public', LOVEKIN_PLUGIN_URL . 'assets/js/lovekin-public.js', array( 'jquery' ), LOVEKIN_VERSION, true );
-			wp_enqueue_script( 'lovekin-chart', 'https://cdn.jsdelivr.net/npm/chart.js', array(), LOVEKIN_VERSION, true );
+			self::enqueue_public_assets();
 			return;
 		}
 
@@ -87,17 +91,310 @@ class LoveKin_Shortcodes {
 			'lovekin_archive',
 			'lovekin_login',
 			'lovekin_register',
+			'lovekin_protect',
 		);
 
 		foreach ( $shortcodes as $shortcode ) {
 			if ( has_shortcode( $post->post_content, $shortcode ) ) {
-				wp_enqueue_style( 'dashicons' );
-				wp_enqueue_style( 'lovekin-public', LOVEKIN_PLUGIN_URL . 'assets/css/lovekin-public.css', array(), LOVEKIN_VERSION );
-				wp_enqueue_script( 'lovekin-public', LOVEKIN_PLUGIN_URL . 'assets/js/lovekin-public.js', array( 'jquery' ), LOVEKIN_VERSION, true );
-				wp_enqueue_script( 'lovekin-chart', 'https://cdn.jsdelivr.net/npm/chart.js', array(), LOVEKIN_VERSION, true );
+				self::enqueue_public_assets();
 				break;
 			}
 		}
+	}
+
+	private static function enqueue_public_assets() {
+		wp_enqueue_style( 'dashicons' );
+		wp_enqueue_style( 'lovekin-public', LOVEKIN_PLUGIN_URL . 'assets/css/lovekin-public.css', array(), LOVEKIN_VERSION );
+		wp_enqueue_script( 'lovekin-public', LOVEKIN_PLUGIN_URL . 'assets/js/lovekin-public.js', array( 'jquery' ), LOVEKIN_VERSION, true );
+		wp_enqueue_script( 'lovekin-chart', 'https://cdn.jsdelivr.net/npm/chart.js', array(), LOVEKIN_VERSION, true );
+		wp_localize_script(
+			'lovekin-public',
+			'lovekinPublic',
+			array(
+				'ajaxUrl'          => admin_url( 'admin-ajax.php' ),
+				'remarkSaveNonce'  => wp_create_nonce( 'lk_update_remark_ajax' ),
+				'savingText'       => __( 'Saving...', 'lovekin' ),
+				'saveText'         => __( 'Save', 'lovekin' ),
+				'remarkSaveFailed' => __( 'Unable to save remark. Please try again.', 'lovekin' ),
+			)
+		);
+	}
+
+	public static function maybe_redirect_protected_page() {
+		if ( is_admin() || wp_doing_ajax() || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ) {
+			return;
+		}
+
+		if ( ! is_singular() ) {
+			return;
+		}
+
+		global $post;
+		if ( ! $post || empty( $post->post_content ) ) {
+			return;
+		}
+
+		$current_page_id  = (int) $post->ID;
+		$login_page_id    = self::get_configured_auth_page_id( 'login_page_id' );
+		$register_page_id = self::get_configured_auth_page_id( 'register_page_id' );
+		$is_login_page    = ( $login_page_id && $current_page_id === $login_page_id ) || has_shortcode( $post->post_content, 'lovekin_login' );
+		$is_register_page = ( $register_page_id && $current_page_id === $register_page_id ) || has_shortcode( $post->post_content, 'lovekin_register' );
+
+		if ( is_user_logged_in() ) {
+			if ( $is_login_page || $is_register_page ) {
+				$dashboard_url = self::get_post_login_redirect_url( wp_get_current_user() );
+				$current_url   = get_permalink( $current_page_id );
+				if ( ! self::urls_share_path( $dashboard_url, $current_url ) ) {
+					wp_safe_redirect( $dashboard_url );
+					exit;
+				}
+			}
+			return;
+		}
+
+		if ( $is_login_page || $is_register_page ) {
+			return;
+		}
+
+		$explicit_protected_page_ids = apply_filters(
+			'lovekin_protected_page_ids',
+			array_filter(
+				array(
+					self::get_configured_auth_page_id( 'dashboard_page_id' ),
+				)
+			)
+		);
+		if ( in_array( $current_page_id, array_map( 'absint', $explicit_protected_page_ids ), true ) ) {
+			wp_safe_redirect( self::build_login_url_with_notice( 'login_required' ) );
+			exit;
+		}
+
+		$protected_shortcodes = apply_filters(
+			'lovekin_protected_shortcodes',
+			array(
+				'lovekin_dashboard',
+				'lovekin_profile',
+				'lovekin_report',
+				'lovekin_assessment',
+				'lovekin_funding_request',
+				'lovekin_documents',
+				'lovekin_archive',
+				'lovekin_protect',
+			)
+		);
+
+		foreach ( $protected_shortcodes as $shortcode ) {
+			if ( ! has_shortcode( $post->post_content, $shortcode ) ) {
+				continue;
+			}
+
+			wp_safe_redirect( self::build_login_url_with_notice( 'login_required' ) );
+			exit;
+		}
+	}
+
+	public static function render_protected_content( $atts = array(), $content = '' ) {
+		$atts = shortcode_atts(
+			array(
+				'roles' => '',
+			),
+			$atts,
+			'lovekin_protect'
+		);
+
+		if ( ! is_user_logged_in() ) {
+			return self::render_login_prompt();
+		}
+
+		$roles = array_filter( array_map( 'sanitize_key', array_map( 'trim', explode( ',', (string) $atts['roles'] ) ) ) );
+		if ( empty( $roles ) ) {
+			return do_shortcode( (string) $content );
+		}
+
+		$user = wp_get_current_user();
+		if ( empty( array_intersect( $roles, (array) $user->roles ) ) ) {
+			return '<div class="lk-card lk-alert lk-alert--error">' . esc_html__( 'You do not have permission to access this content.', 'lovekin' ) . '</div>';
+		}
+
+		return do_shortcode( (string) $content );
+	}
+
+	public static function filter_wp_login_errors( $error ) {
+		$lk_auth = isset( $_REQUEST['lk_auth'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['lk_auth'] ) ) : '';
+		if ( '1' !== $lk_auth ) {
+			return $error;
+		}
+
+		$action = isset( $_REQUEST['action'] ) ? sanitize_key( wp_unslash( $_REQUEST['action'] ) ) : 'login';
+		if ( in_array( $action, array( 'lostpassword', 'retrievepassword' ), true ) ) {
+			return __( 'If an account matches those details, a password reset email has been sent.', 'lovekin' );
+		}
+
+		if ( in_array( $action, array( 'login', '' ), true ) ) {
+			return __( 'Invalid login credentials. Please try again.', 'lovekin' );
+		}
+
+		return $error;
+	}
+
+	public static function handle_login_submission() {
+		if ( is_user_logged_in() ) {
+			wp_safe_redirect( self::get_post_login_redirect_url( wp_get_current_user() ) );
+			exit;
+		}
+
+		if ( 'POST' !== ( $_SERVER['REQUEST_METHOD'] ?? '' ) ) {
+			wp_safe_redirect( self::add_auth_query_args( self::get_login_url(), array( 'lk_error' => 'invalid_request' ) ) );
+			exit;
+		}
+
+		$nonce = isset( $_POST['lk_login_nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['lk_login_nonce'] ) ) : '';
+		if ( ! wp_verify_nonce( $nonce, 'lk_login' ) ) {
+			wp_safe_redirect( self::add_auth_query_args( self::get_login_url(), array( 'lk_error' => 'invalid_request' ) ) );
+			exit;
+		}
+
+		$login_identifier = isset( $_POST['username'] ) ? sanitize_text_field( wp_unslash( $_POST['username'] ) ) : '';
+		$password         = isset( $_POST['password'] ) ? (string) wp_unslash( $_POST['password'] ) : '';
+		$remember_me      = ! empty( $_POST['rememberme'] );
+
+		if ( '' === $login_identifier || '' === $password ) {
+			wp_safe_redirect( self::add_auth_query_args( self::get_login_url(), array( 'lk_error' => 'missing_credentials' ) ) );
+			exit;
+		}
+
+		$signon_login = $login_identifier;
+		if ( is_email( $login_identifier ) ) {
+			$user_by_email = get_user_by( 'email', $login_identifier );
+			if ( $user_by_email ) {
+				$signon_login = $user_by_email->user_login;
+			}
+		}
+
+		$user = wp_signon(
+			array(
+				'user_login'    => $signon_login,
+				'user_password' => $password,
+				'remember'      => $remember_me,
+			),
+			is_ssl()
+		);
+
+		if ( is_wp_error( $user ) ) {
+			wp_safe_redirect( self::add_auth_query_args( self::get_login_url(), array( 'lk_error' => 'invalid_login' ) ) );
+			exit;
+		}
+
+		wp_safe_redirect( self::get_post_login_redirect_url( $user ) );
+		exit;
+	}
+
+	public static function handle_register_submission() {
+		if ( is_user_logged_in() ) {
+			wp_safe_redirect( self::get_post_login_redirect_url( wp_get_current_user() ) );
+			exit;
+		}
+
+		if ( 'POST' !== ( $_SERVER['REQUEST_METHOD'] ?? '' ) ) {
+			wp_safe_redirect( self::add_auth_query_args( self::get_register_url(), array( 'lk_error' => 'invalid_request' ) ) );
+			exit;
+		}
+
+		$nonce = isset( $_POST['lk_register_nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['lk_register_nonce'] ) ) : '';
+		if ( ! wp_verify_nonce( $nonce, 'lk_register' ) ) {
+			wp_safe_redirect( self::add_auth_query_args( self::get_register_url(), array( 'lk_error' => 'invalid_request' ) ) );
+			exit;
+		}
+
+		$form_values = array(
+			'first_name'   => isset( $_POST['first_name'] ) ? sanitize_text_field( wp_unslash( $_POST['first_name'] ) ) : '',
+			'last_name'    => isset( $_POST['last_name'] ) ? sanitize_text_field( wp_unslash( $_POST['last_name'] ) ) : '',
+			'username'     => isset( $_POST['username'] ) ? sanitize_user( wp_unslash( $_POST['username'] ) ) : '',
+			'email'        => isset( $_POST['email'] ) ? sanitize_email( wp_unslash( $_POST['email'] ) ) : '',
+			'phone_number' => isset( $_POST['phone_number'] ) ? sanitize_text_field( wp_unslash( $_POST['phone_number'] ) ) : '',
+			'occupation'   => isset( $_POST['occupation'] ) ? sanitize_text_field( wp_unslash( $_POST['occupation'] ) ) : '',
+			'city'         => isset( $_POST['city'] ) ? sanitize_text_field( wp_unslash( $_POST['city'] ) ) : '',
+			'state'        => isset( $_POST['state'] ) ? sanitize_text_field( wp_unslash( $_POST['state'] ) ) : '',
+			'country'      => isset( $_POST['country'] ) ? sanitize_text_field( wp_unslash( $_POST['country'] ) ) : '',
+		);
+		$password         = isset( $_POST['password'] ) ? (string) wp_unslash( $_POST['password'] ) : '';
+		$password_confirm = isset( $_POST['confirm_password'] ) ? (string) wp_unslash( $_POST['confirm_password'] ) : '';
+
+		$required_fields = array(
+			$form_values['first_name'],
+			$form_values['last_name'],
+			$form_values['username'],
+			$form_values['email'],
+			$password,
+			$password_confirm,
+			$form_values['phone_number'],
+			$form_values['occupation'],
+			$form_values['city'],
+			$form_values['state'],
+			$form_values['country'],
+		);
+
+		if ( in_array( '', $required_fields, true ) ) {
+			wp_safe_redirect( self::add_auth_query_args( self::get_register_url(), array( 'lk_error' => 'required_fields' ) ) );
+			exit;
+		}
+
+		if ( ! validate_username( $form_values['username'] ) || strlen( $form_values['username'] ) < 4 ) {
+			wp_safe_redirect( self::add_auth_query_args( self::get_register_url(), array( 'lk_error' => 'invalid_username' ) ) );
+			exit;
+		}
+
+		if ( ! is_email( $form_values['email'] ) ) {
+			wp_safe_redirect( self::add_auth_query_args( self::get_register_url(), array( 'lk_error' => 'invalid_email' ) ) );
+			exit;
+		}
+
+		if ( strlen( $password ) < 8 || ! preg_match( '/[A-Za-z]/', $password ) || ! preg_match( '/\d/', $password ) ) {
+			wp_safe_redirect( self::add_auth_query_args( self::get_register_url(), array( 'lk_error' => 'weak_password' ) ) );
+			exit;
+		}
+
+		if ( $password !== $password_confirm ) {
+			wp_safe_redirect( self::add_auth_query_args( self::get_register_url(), array( 'lk_error' => 'password_mismatch' ) ) );
+			exit;
+		}
+
+		if ( username_exists( $form_values['username'] ) || email_exists( $form_values['email'] ) ) {
+			wp_safe_redirect( self::add_auth_query_args( self::get_register_url(), array( 'lk_error' => 'register_failed' ) ) );
+			exit;
+		}
+
+		$display_name = trim( $form_values['first_name'] . ' ' . $form_values['last_name'] );
+		if ( '' === $display_name ) {
+			$display_name = $form_values['username'];
+		}
+
+		$user_id = wp_insert_user(
+			array(
+				'user_login'   => $form_values['username'],
+				'user_email'   => $form_values['email'],
+				'user_pass'    => $password,
+				'first_name'   => $form_values['first_name'],
+				'last_name'    => $form_values['last_name'],
+				'display_name' => $display_name,
+				'role'         => self::get_default_registration_role(),
+			)
+		);
+
+		if ( is_wp_error( $user_id ) ) {
+			wp_safe_redirect( self::add_auth_query_args( self::get_register_url(), array( 'lk_error' => 'register_failed' ) ) );
+			exit;
+		}
+
+		update_user_meta( $user_id, 'lk_phone_number', $form_values['phone_number'] );
+		update_user_meta( $user_id, 'lk_occupation', $form_values['occupation'] );
+		update_user_meta( $user_id, 'lk_city', $form_values['city'] );
+		update_user_meta( $user_id, 'lk_state', $form_values['state'] );
+		update_user_meta( $user_id, 'lk_country', $form_values['country'] );
+		self::ensure_membership_code( $user_id );
+
+		wp_safe_redirect( self::add_auth_query_args( self::get_post_registration_redirect_url(), array( 'lk_notice' => 'registered' ) ) );
+		exit;
 	}
 
 	public static function render_dashboard() {
@@ -114,6 +411,7 @@ class LoveKin_Shortcodes {
 			$page_url = home_url( $page_url );
 		}
 		$base_url = remove_query_arg( array( 'lk_profile', 'lk_funding', 'lk_archive', 'lk_course', 'lk_user', 'lk_result' ), $page_url );
+		$tabs_panel_id = function_exists( 'wp_unique_id' ) ? wp_unique_id( 'lk-dashboard-tabs-' ) : 'lk-dashboard-tabs-panel';
 
 		ob_start();
 		?>
@@ -126,10 +424,16 @@ class LoveKin_Shortcodes {
 				<div class="lk-quick-actions">
 					<a class="lk-button" href="<?php echo esc_url( add_query_arg( 'lk_tab', 'courses', $base_url ) ); ?>"><?php esc_html_e( 'Explore Courses', 'lovekin' ); ?></a>
 					<a class="lk-button lk-button--ghost" href="<?php echo esc_url( add_query_arg( 'lk_tab', 'reports', $base_url ) ); ?>"><?php esc_html_e( 'View Reports', 'lovekin' ); ?></a>
+					<a class="lk-button lk-button--ghost" href="<?php echo esc_url( wp_logout_url( self::build_login_url_with_notice( 'logged_out' ) ) ); ?>"><?php esc_html_e( 'Log Out', 'lovekin' ); ?></a>
 				</div>
+				<button type="button" class="lk-menu-toggle" data-lk="menu-toggle" aria-expanded="false" aria-controls="<?php echo esc_attr( $tabs_panel_id ); ?>">
+					<span class="dashicons dashicons-menu" aria-hidden="true"></span>
+					<span><?php esc_html_e( 'Menu', 'lovekin' ); ?></span>
+				</button>
 			</div>
 
-			<div class="lk-dashboard-tabs" data-lk="tabs">
+			<div id="<?php echo esc_attr( $tabs_panel_id ); ?>" class="lk-dashboard-tabs-wrap" data-lk="tabs-wrap">
+				<div class="lk-dashboard-tabs" data-lk="tabs">
 				<?php
 				$tabs = array(
 					'home'     => __( 'Home', 'lovekin' ),
@@ -146,6 +450,7 @@ class LoveKin_Shortcodes {
 						<?php echo esc_html( $label ); ?>
 					</a>
 				<?php endforeach; ?>
+				</div>
 			</div>
 
 			<div class="lk-dashboard-content">
@@ -182,7 +487,7 @@ class LoveKin_Shortcodes {
 
 	private static function render_home() {
 		$user_id = get_current_user_id();
-		$attempts = LoveKin_Assessments::get_attempts_for_user( $user_id, 5 );
+		$attempts = LoveKin_Assessments::get_attempts_for_user( $user_id, 200 );
 		$primary  = LoveKin_Relationships::get_primary_for_secondary( $user_id );
 		$mentees  = LoveKin_Relationships::get_secondaries_for_primary( $user_id );
 		$all_attempts = LoveKin_Reports::get_user_attempts( $user_id );
@@ -251,26 +556,28 @@ class LoveKin_Shortcodes {
 				<div class="lk-card-header">
 					<h3><?php esc_html_e( 'Recent Activity', 'lovekin' ); ?></h3>
 				</div>
-				<ul class="lk-activity">
-					<?php if ( empty( $attempts ) ) : ?>
-						<li class="lk-empty"><?php esc_html_e( 'No assessments yet. Start with a course!', 'lovekin' ); ?></li>
-					<?php else : ?>
-						<?php foreach ( $attempts as $attempt ) :
-							$course = get_post( $attempt->course_id );
-							$band   = LoveKin_Reports::get_remark_for_score( $attempt->score );
-							?>
-							<li class="lk-activity-item">
-								<div>
-									<strong><?php echo esc_html( $course ? $course->post_title : __( 'Course', 'lovekin' ) ); ?></strong>
-									<span class="lk-meta"><?php echo esc_html( mysql2date( 'M j, Y', $attempt->created_at ) ); ?></span>
-								</div>
-								<span class="lk-score-pill" style="--lk-score-color: <?php echo esc_attr( $band['color'] ); ?>;">
-									<?php echo esc_html( number_format_i18n( $attempt->score, 1 ) ); ?>%
-								</span>
-							</li>
-						<?php endforeach; ?>
-					<?php endif; ?>
-				</ul>
+				<div class="lk-pagination-wrap" data-lk-pagination="recent-activity" data-lk-page-size="5">
+					<ul class="lk-activity">
+						<?php if ( empty( $attempts ) ) : ?>
+							<li class="lk-empty"><?php esc_html_e( 'No assessments yet. Start with a course!', 'lovekin' ); ?></li>
+						<?php else : ?>
+							<?php foreach ( $attempts as $attempt ) :
+								$course = get_post( $attempt->course_id );
+								$band   = LoveKin_Reports::get_remark_for_score( $attempt->score );
+								?>
+								<li class="lk-activity-item" data-lk-page-row>
+									<div>
+										<strong><?php echo esc_html( $course ? $course->post_title : __( 'Course', 'lovekin' ) ); ?></strong>
+										<span class="lk-meta"><?php echo esc_html( mysql2date( 'M j, Y', $attempt->created_at ) ); ?></span>
+									</div>
+									<span class="lk-score-pill" style="--lk-score-color: <?php echo esc_attr( $band['color'] ); ?>;">
+										<?php echo esc_html( number_format_i18n( $attempt->score, 1 ) ); ?>%
+									</span>
+								</li>
+							<?php endforeach; ?>
+						<?php endif; ?>
+					</ul>
+				</div>
 			</div>
 
 			<?php if ( $primary ) : ?>
@@ -376,8 +683,7 @@ class LoveKin_Shortcodes {
 			)
 		);
 		if ( empty( $base_url ) ) {
-			$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : '/';
-			$base_url    = home_url( $request_uri );
+			$base_url = self::get_current_request_url();
 		}
 
 		ob_start();
@@ -393,13 +699,16 @@ class LoveKin_Shortcodes {
 						$file_url = get_post_meta( $course->ID, '_lk_course_file_url', true );
 						$latest_score = LoveKin_Assessments::get_latest_score_for_user_course( get_current_user_id(), $course->ID );
 						$has_assessment = (bool) $assessment;
+						$status_class   = $has_assessment ? 'lk-status-pill--assessment-open' : 'lk-status-pill--assessment-pending';
+						$status_label   = $has_assessment ? __( 'Assessment Open', 'lovekin' ) : __( 'Assessment Pending', 'lovekin' );
+						$status_icon    = $has_assessment ? 'dashicons-yes' : 'dashicons-update';
 						?>
 						<div class="lk-course-card">
 							<div class="lk-course-body">
 								<h4 class="lk-course-title"><?php echo esc_html( $course->post_title ); ?></h4>
-								<span class="lk-status-pill <?php echo $has_assessment ? 'lk-status-pill--ready' : 'lk-status-pill--soon'; ?>">
-									<span class="dashicons <?php echo $has_assessment ? 'dashicons-yes' : 'dashicons-hourglass'; ?>"></span>
-									<?php echo esc_html( $has_assessment ? __( 'Ready', 'lovekin' ) : __( 'Coming soon', 'lovekin' ) ); ?>
+								<span class="lk-status-pill <?php echo esc_attr( $status_class ); ?>">
+									<span class="dashicons <?php echo esc_attr( $status_icon ); ?>"></span>
+									<?php echo esc_html( $status_label ); ?>
 								</span>
 								<p class="lk-course-desc"><?php echo esc_html( wp_trim_words( $course->post_content, 32 ) ); ?></p>
 								<div class="lk-course-metrics">
@@ -446,6 +755,10 @@ class LoveKin_Shortcodes {
 		$membership_code = self::ensure_membership_code( $user_id );
 		$occupation = get_user_meta( $user_id, 'lk_occupation', true );
 		$position = get_user_meta( $user_id, 'lk_org_chart_position', true );
+		$phone = get_user_meta( $user_id, 'lk_phone_number', true );
+		$city = get_user_meta( $user_id, 'lk_city', true );
+		$state = get_user_meta( $user_id, 'lk_state', true );
+		$country = get_user_meta( $user_id, 'lk_country', true );
 		$first_name = get_user_meta( $user_id, 'first_name', true );
 		$last_name  = get_user_meta( $user_id, 'last_name', true );
 		$avatar_meta = get_user_meta( $user_id, 'lk_profile_picture', true );
@@ -505,10 +818,13 @@ class LoveKin_Shortcodes {
 							<span class="lk-badge <?php echo ( 'Primary' === $status || 'Admin' === $status ) ? 'lk-badge--primary' : 'lk-badge--success'; ?>"><?php echo esc_html( $status ); ?></span>
 						</div>
 					</div>
-					<div class="lk-profile-meta">
-						<p><strong><?php esc_html_e( 'Membership Code', 'lovekin' ); ?></strong><br><?php echo esc_html( $membership_code ); ?></p>
-						<p><strong><?php esc_html_e( 'Email', 'lovekin' ); ?></strong><br><?php echo esc_html( $user->user_email ); ?></p>
-					</div>
+						<div class="lk-profile-meta">
+							<p><strong><?php esc_html_e( 'Membership Code', 'lovekin' ); ?></strong><br><?php echo esc_html( $membership_code ); ?></p>
+							<p><strong><?php esc_html_e( 'Email', 'lovekin' ); ?></strong><br><?php echo esc_html( $user->user_email ); ?></p>
+							<p><strong><?php esc_html_e( 'Phone', 'lovekin' ); ?></strong><br><?php echo esc_html( $phone ? $phone : __( 'Not set', 'lovekin' ) ); ?></p>
+							<p><strong><?php esc_html_e( 'Location', 'lovekin' ); ?></strong><br><?php echo esc_html( implode( ', ', array_filter( array( $city, $state, $country ) ) ) ?: __( 'Not set', 'lovekin' ) ); ?></p>
+							<p><strong><?php esc_html_e( 'Occupation', 'lovekin' ); ?></strong><br><?php echo esc_html( $occupation ? $occupation : __( 'Not set', 'lovekin' ) ); ?></p>
+						</div>
 					<div class="lk-profile-stats">
 						<div>
 							<span><?php esc_html_e( 'Assessments', 'lovekin' ); ?></span>
@@ -557,6 +873,10 @@ class LoveKin_Shortcodes {
 								<label><?php esc_html_e( 'Email', 'lovekin' ); ?></label>
 								<input type="email" value="<?php echo esc_attr( $user->user_email ); ?>" disabled />
 							</div>
+							<div class="lk-field">
+								<label><?php esc_html_e( 'Phone Number', 'lovekin' ); ?></label>
+								<input type="tel" name="phone_number" value="<?php echo esc_attr( $phone ); ?>" />
+							</div>
 						</div>
 
 						<div class="lk-field-grid">
@@ -567,6 +887,21 @@ class LoveKin_Shortcodes {
 							<div class="lk-field">
 								<label><?php esc_html_e( 'Organization Position', 'lovekin' ); ?></label>
 								<input type="text" name="position" value="<?php echo esc_attr( $position ); ?>" />
+							</div>
+						</div>
+
+						<div class="lk-field-grid">
+							<div class="lk-field">
+								<label><?php esc_html_e( 'City', 'lovekin' ); ?></label>
+								<input type="text" name="city" value="<?php echo esc_attr( $city ); ?>" />
+							</div>
+							<div class="lk-field">
+								<label><?php esc_html_e( 'State', 'lovekin' ); ?></label>
+								<input type="text" name="state" value="<?php echo esc_attr( $state ); ?>" />
+							</div>
+							<div class="lk-field">
+								<label><?php esc_html_e( 'Country', 'lovekin' ); ?></label>
+								<input type="text" name="country" value="<?php echo esc_attr( $country ); ?>" />
 							</div>
 						</div>
 
@@ -581,12 +916,12 @@ class LoveKin_Shortcodes {
 
 	public static function handle_profile_update() {
 		if ( ! is_user_logged_in() ) {
-			wp_safe_redirect( wp_login_url() );
+			wp_safe_redirect( self::build_login_url_with_notice( 'login_required' ) );
 			exit;
 		}
 
 		if ( ! current_user_can( 'lk_edit_profile' ) ) {
-			wp_safe_redirect( wp_login_url() );
+			wp_safe_redirect( self::build_login_url_with_notice( 'login_required' ) );
 			exit;
 		}
 
@@ -651,11 +986,19 @@ class LoveKin_Shortcodes {
 		$last_name  = isset( $_POST['last_name'] ) ? sanitize_text_field( wp_unslash( $_POST['last_name'] ) ) : '';
 		$occupation      = isset( $_POST['occupation'] ) ? sanitize_text_field( wp_unslash( $_POST['occupation'] ) ) : '';
 		$position        = isset( $_POST['position'] ) ? sanitize_text_field( wp_unslash( $_POST['position'] ) ) : '';
+		$phone_number    = isset( $_POST['phone_number'] ) ? sanitize_text_field( wp_unslash( $_POST['phone_number'] ) ) : '';
+		$city            = isset( $_POST['city'] ) ? sanitize_text_field( wp_unslash( $_POST['city'] ) ) : '';
+		$state           = isset( $_POST['state'] ) ? sanitize_text_field( wp_unslash( $_POST['state'] ) ) : '';
+		$country         = isset( $_POST['country'] ) ? sanitize_text_field( wp_unslash( $_POST['country'] ) ) : '';
 
 		update_user_meta( $user_id, 'first_name', $first_name );
 		update_user_meta( $user_id, 'last_name', $last_name );
 		update_user_meta( $user_id, 'lk_occupation', $occupation );
 		update_user_meta( $user_id, 'lk_org_chart_position', $position );
+		update_user_meta( $user_id, 'lk_phone_number', $phone_number );
+		update_user_meta( $user_id, 'lk_city', $city );
+		update_user_meta( $user_id, 'lk_state', $state );
+		update_user_meta( $user_id, 'lk_country', $country );
 
 		if ( $first_name || $last_name ) {
 			$display_name = trim( $first_name . ' ' . $last_name );
@@ -966,53 +1309,55 @@ class LoveKin_Shortcodes {
 				<div class="lk-card-header">
 					<h3><?php esc_html_e( 'Request History', 'lovekin' ); ?></h3>
 				</div>
-			<table class="lk-table">
-				<thead>
-					<tr>
-						<th><?php esc_html_e( 'Amount', 'lovekin' ); ?></th>
-						<th><?php esc_html_e( 'Status', 'lovekin' ); ?></th>
-						<th><?php esc_html_e( 'Submitted', 'lovekin' ); ?></th>
-						<th><?php esc_html_e( 'Admin Notes', 'lovekin' ); ?></th>
-						<th><?php esc_html_e( 'Document', 'lovekin' ); ?></th>
-						<th><?php esc_html_e( 'Account Details', 'lovekin' ); ?></th>
-					</tr>
-				</thead>
-				<tbody>
-					<?php if ( empty( $requests ) ) : ?>
-						<tr><td colspan="6"><?php esc_html_e( 'No requests yet.', 'lovekin' ); ?></td></tr>
-					<?php else : ?>
-						<?php foreach ( $requests as $request ) : ?>
+				<div class="lk-pagination-wrap" data-lk-pagination="funding-history" data-lk-page-size="5">
+					<table class="lk-table">
+						<thead>
 							<tr>
-								<td>&#8358;<?php echo esc_html( number_format_i18n( $request->amount, 2 ) ); ?></td>
-								<td><span class="lk-badge lk-badge--<?php echo esc_attr( $request->status ); ?>"><?php echo esc_html( ucfirst( $request->status ) ); ?></span></td>
-								<td><?php echo esc_html( mysql2date( 'M j, Y', $request->created_at ) ); ?></td>
-								<td><?php echo esc_html( $request->admin_notes ); ?></td>
-								<td>
-									<?php
-									$supporting_url = LoveKin_Funding::get_supporting_file_url( $request->supporting_file );
-									?>
-									<?php if ( $supporting_url ) : ?>
-										<a class="lk-button lk-button--ghost" href="<?php echo esc_url( $supporting_url ); ?>" target="_blank" rel="noopener"><?php esc_html_e( 'Download', 'lovekin' ); ?></a>
-									<?php else : ?>
-										<?php esc_html_e( '-', 'lovekin' ); ?>
-									<?php endif; ?>
-								</td>
-								<td>
-									<?php
-									$details = LoveKin_Funding::parse_account_details( $request->account_details );
-									printf(
-										'%s<br>%s<br>%s',
-										esc_html( $details['name'] ),
-										esc_html( $details['number'] ),
-										esc_html( $details['bank'] )
-									);
-									?>
-								</td>
+								<th><?php esc_html_e( 'Amount', 'lovekin' ); ?></th>
+								<th><?php esc_html_e( 'Status', 'lovekin' ); ?></th>
+								<th><?php esc_html_e( 'Submitted', 'lovekin' ); ?></th>
+								<th><?php esc_html_e( 'Admin Notes', 'lovekin' ); ?></th>
+								<th><?php esc_html_e( 'Document', 'lovekin' ); ?></th>
+								<th><?php esc_html_e( 'Account Details', 'lovekin' ); ?></th>
 							</tr>
-						<?php endforeach; ?>
-					<?php endif; ?>
-				</tbody>
-			</table>
+						</thead>
+						<tbody>
+							<?php if ( empty( $requests ) ) : ?>
+								<tr><td colspan="6"><?php esc_html_e( 'No requests yet.', 'lovekin' ); ?></td></tr>
+							<?php else : ?>
+								<?php foreach ( $requests as $request ) : ?>
+									<tr data-lk-page-row>
+										<td>&#8358;<?php echo esc_html( number_format_i18n( $request->amount, 2 ) ); ?></td>
+										<td><span class="lk-badge lk-badge--<?php echo esc_attr( $request->status ); ?>"><?php echo esc_html( ucfirst( $request->status ) ); ?></span></td>
+										<td><?php echo esc_html( mysql2date( 'M j, Y', $request->created_at ) ); ?></td>
+										<td><?php echo esc_html( $request->admin_notes ); ?></td>
+										<td>
+											<?php
+											$supporting_url = LoveKin_Funding::get_supporting_file_url( $request->supporting_file );
+											?>
+											<?php if ( $supporting_url ) : ?>
+												<a class="lk-button lk-button--ghost" href="<?php echo esc_url( $supporting_url ); ?>" target="_blank" rel="noopener"><?php esc_html_e( 'Download', 'lovekin' ); ?></a>
+											<?php else : ?>
+												<?php esc_html_e( '-', 'lovekin' ); ?>
+											<?php endif; ?>
+										</td>
+										<td>
+											<?php
+											$details = LoveKin_Funding::parse_account_details( $request->account_details );
+											printf(
+												'%s<br>%s<br>%s',
+												esc_html( $details['name'] ),
+												esc_html( $details['number'] ),
+												esc_html( $details['bank'] )
+											);
+											?>
+										</td>
+									</tr>
+								<?php endforeach; ?>
+							<?php endif; ?>
+						</tbody>
+					</table>
+				</div>
 			</div>
 		</div>
 		<?php
@@ -1026,40 +1371,84 @@ class LoveKin_Shortcodes {
 
 		$docs = LoveKin_Documents::get_documents_for_user( get_current_user_id() );
 		$doc_categories = array();
+		$total_doc_bytes = 0;
 		foreach ( $docs as $doc ) {
+			$total_doc_bytes += (int) $doc->file_size;
 			if ( ! empty( $doc->category ) ) {
 				$doc_categories[ $doc->category ] = ucfirst( $doc->category );
 			}
 		}
+		$doc_count = count( $docs );
+		$total_doc_mb = $total_doc_bytes / ( 1024 * 1024 );
 		ob_start();
 		?>
-		<div class="lk-root lk-card">
-			<div class="lk-card-header">
-				<h3><?php esc_html_e( 'Document Library', 'lovekin' ); ?></h3>
-				<div class="lk-toolbar">
-					<div class="lk-search">
-						<span class="dashicons dashicons-search"></span>
-						<input type="search" placeholder="<?php esc_attr_e( 'Search documents', 'lovekin' ); ?>" data-lk="doc-search" />
-					</div>
-					<select data-lk="doc-filter">
-						<option value="all"><?php esc_html_e( 'All Categories', 'lovekin' ); ?></option>
-						<?php foreach ( $doc_categories as $key => $label ) : ?>
-							<option value="<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></option>
-						<?php endforeach; ?>
-					</select>
+		<div class="lk-root lk-card lk-documents-panel">
+			<div class="lk-card-header lk-documents-header">
+				<div>
+					<h3><?php esc_html_e( 'Document Library', 'lovekin' ); ?></h3>
+					<p class="lk-meta lk-documents-subtitle"><?php esc_html_e( 'Shared resources available to all members.', 'lovekin' ); ?></p>
+				</div>
+				<div class="lk-documents-summary">
+					<span class="lk-badge lk-badge--primary">
+						<?php
+						printf(
+							esc_html__( '%d files', 'lovekin' ),
+							(int) $doc_count
+						);
+						?>
+					</span>
+					<span class="lk-meta">
+						<?php
+						printf(
+							esc_html__( '%s MB total', 'lovekin' ),
+							esc_html( number_format_i18n( $total_doc_mb, 1 ) )
+						);
+						?>
+					</span>
 				</div>
 			</div>
-			<div class="lk-document-grid">
+			<div class="lk-toolbar lk-documents-toolbar">
+				<div class="lk-search">
+					<span class="dashicons dashicons-search"></span>
+					<input type="search" placeholder="<?php esc_attr_e( 'Search documents', 'lovekin' ); ?>" data-lk="doc-search" />
+				</div>
+				<select data-lk="doc-filter">
+					<option value="all"><?php esc_html_e( 'All Categories', 'lovekin' ); ?></option>
+					<?php foreach ( $doc_categories as $key => $label ) : ?>
+						<option value="<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></option>
+					<?php endforeach; ?>
+				</select>
+			</div>
+			<div class="lk-document-grid lk-document-grid--refined">
 				<?php if ( empty( $docs ) ) : ?>
-					<p class="lk-empty"><?php esc_html_e( 'No documents available.', 'lovekin' ); ?></p>
+					<div class="lk-empty-state">
+						<h4><?php esc_html_e( 'No documents yet', 'lovekin' ); ?></h4>
+						<p><?php esc_html_e( 'Shared documents uploaded by administrators will appear here.', 'lovekin' ); ?></p>
+					</div>
 				<?php else : ?>
 					<?php foreach ( $docs as $doc ) : ?>
-						<div class="lk-document-card" data-category="<?php echo esc_attr( $doc->category ); ?>" data-title="<?php echo esc_attr( strtolower( $doc->title ) ); ?>">
-							<h4><?php echo esc_html( $doc->title ); ?></h4>
-							<p><?php echo esc_html( $doc->description ); ?></p>
-							<span class="lk-meta"><?php echo esc_html( strtoupper( $doc->file_type ) ); ?> · <?php echo esc_html( number_format_i18n( $doc->file_size / 1024, 1 ) ); ?> KB · <?php echo esc_html( ucfirst( $doc->category ) ); ?></span>
-							<a class="lk-button lk-button--ghost" href="<?php echo esc_url( LoveKin_Documents::get_download_url( $doc->id ) ); ?>"><?php esc_html_e( 'Download', 'lovekin' ); ?></a>
-						</div>
+						<?php
+						$title_for_search = strtolower( trim( $doc->title . ' ' . $doc->description . ' ' . $doc->category ) );
+						?>
+						<article class="lk-document-card lk-document-card--refined" data-category="<?php echo esc_attr( $doc->category ); ?>" data-title="<?php echo esc_attr( $title_for_search ); ?>">
+							<div class="lk-document-card-head">
+								<h4><?php echo esc_html( $doc->title ); ?></h4>
+								<span class="lk-badge lk-badge--primary lk-doc-type"><?php echo esc_html( strtoupper( (string) $doc->file_type ) ); ?></span>
+							</div>
+							<?php if ( ! empty( $doc->description ) ) : ?>
+								<p class="lk-document-desc"><?php echo esc_html( $doc->description ); ?></p>
+							<?php else : ?>
+								<p class="lk-document-desc"><?php esc_html_e( 'No description provided.', 'lovekin' ); ?></p>
+							<?php endif; ?>
+							<div class="lk-document-meta-row">
+								<span class="lk-meta"><?php echo esc_html( ucfirst( $doc->category ) ); ?></span>
+								<span class="lk-meta"><?php echo esc_html( number_format_i18n( $doc->file_size / 1024, 1 ) ); ?> KB</span>
+								<span class="lk-meta"><?php echo esc_html( mysql2date( 'M j, Y', $doc->created_at ) ); ?></span>
+							</div>
+							<div class="lk-document-actions">
+								<a class="lk-button lk-button--ghost" href="<?php echo esc_url( LoveKin_Documents::get_download_url( $doc->id ) ); ?>"><?php esc_html_e( 'Download', 'lovekin' ); ?></a>
+							</div>
+						</article>
 					<?php endforeach; ?>
 				<?php endif; ?>
 			</div>
@@ -1073,9 +1462,14 @@ class LoveKin_Shortcodes {
 			return self::render_login_prompt();
 		}
 
-		$files = LoveKin_Archive::get_user_files( get_current_user_id() );
+		$files    = LoveKin_Archive::get_user_files( get_current_user_id() );
 		$settings = get_option( 'lovekin_upload_settings', array() );
-		$quota_mb = isset( $settings['archive_quota_mb'] ) ? (int) $settings['archive_quota_mb'] : 100;
+		$quota_mb = isset( $settings['archive_quota_mb'] ) ? max( 1, (int) $settings['archive_quota_mb'] ) : 100;
+		$max_mb   = isset( $settings['max_file_size_mb'] ) ? max( 1, (int) $settings['max_file_size_mb'] ) : 10;
+		$allowed  = isset( $settings['allowed_types'] ) && is_array( $settings['allowed_types'] ) ? array_filter( array_map( 'strtolower', $settings['allowed_types'] ) ) : array( 'pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png' );
+		if ( empty( $allowed ) ) {
+			$allowed = array( 'pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png' );
+		}
 		$total_bytes = 0;
 		$folders = array();
 		foreach ( $files as $file ) {
@@ -1084,48 +1478,112 @@ class LoveKin_Shortcodes {
 				$folders[ $file->folder ] = $file->folder;
 			}
 		}
-		$used_mb = $total_bytes / ( 1024 * 1024 );
+		$used_mb        = $total_bytes / ( 1024 * 1024 );
+		$remaining_mb   = max( 0, $quota_mb - $used_mb );
 		$usage_percent = $quota_mb > 0 ? min( 100, ( $used_mb / $quota_mb ) * 100 ) : 0;
 		$archive_notice = isset( $_GET['lk_archive'] ) ? sanitize_text_field( wp_unslash( $_GET['lk_archive'] ) ) : '';
+		$notice_map     = array(
+			'uploaded' => array(
+				'class'   => 'lk-alert--success',
+				'message' => __( 'File uploaded successfully.', 'lovekin' ),
+			),
+			'missing'  => array(
+				'class'   => 'lk-alert--error',
+				'message' => __( 'Please choose a file before uploading.', 'lovekin' ),
+			),
+			'type'     => array(
+				'class'   => 'lk-alert--error',
+				'message' => __( 'Unsupported file type. Please upload an allowed extension.', 'lovekin' ),
+			),
+			'size'     => array(
+				'class'   => 'lk-alert--error',
+				'message' => __( 'File exceeds the configured upload size limit.', 'lovekin' ),
+			),
+			'quota'    => array(
+				'class'   => 'lk-alert--error',
+				'message' => __( 'Archive quota exceeded. Delete older files or ask an admin to increase the quota.', 'lovekin' ),
+			),
+			'upload'   => array(
+				'class'   => 'lk-alert--error',
+				'message' => __( 'Unable to upload file. Please try again.', 'lovekin' ),
+			),
+			'db'       => array(
+				'class'   => 'lk-alert--error',
+				'message' => __( 'File uploaded but could not be saved in the archive list. Please try again.', 'lovekin' ),
+			),
+		);
+		$allowed_list   = strtoupper( implode( ', ', $allowed ) );
+		$accept_attr    = '.' . implode( ',.', array_map( 'sanitize_key', $allowed ) );
 		ob_start();
 		?>
-		<div class="lk-card">
-			<div class="lk-card-header">
-				<h3><?php esc_html_e( 'My Archive', 'lovekin' ); ?></h3>
-				<span class="lk-meta">
-					<?php
-					printf(
-						esc_html__( '%.1f MB of %d MB used', 'lovekin' ),
-						$used_mb,
-						$quota_mb
-					);
-					?>
-				</span>
+		<div class="lk-root lk-card lk-archive-card">
+			<div class="lk-card-header lk-archive-header">
+				<div>
+					<h3><?php esc_html_e( 'My Archive', 'lovekin' ); ?></h3>
+					<p class="lk-meta"><?php esc_html_e( 'Private workspace for your personal uploads.', 'lovekin' ); ?></p>
+				</div>
+				<div class="lk-archive-kpis">
+					<span class="lk-badge lk-badge--primary">
+						<?php
+						printf(
+							esc_html__( '%d files', 'lovekin' ),
+							count( $files )
+						);
+						?>
+					</span>
+					<span class="lk-meta">
+						<?php
+						printf(
+							esc_html__( '%1$s MB of %2$d MB used', 'lovekin' ),
+							esc_html( number_format_i18n( $used_mb, 1 ) ),
+							(int) $quota_mb
+						);
+						?>
+					</span>
+				</div>
 			</div>
-			<?php if ( $archive_notice ) : ?>
-				<?php if ( 'uploaded' === $archive_notice ) : ?>
-					<div class="lk-alert lk-alert--success"><?php esc_html_e( 'File uploaded successfully.', 'lovekin' ); ?></div>
-				<?php elseif ( 'type' === $archive_notice ) : ?>
-					<div class="lk-alert lk-alert--error"><?php esc_html_e( 'Unsupported file type.', 'lovekin' ); ?></div>
-				<?php elseif ( 'size' === $archive_notice ) : ?>
-					<div class="lk-alert lk-alert--error"><?php esc_html_e( 'File exceeds the maximum size.', 'lovekin' ); ?></div>
-				<?php elseif ( 'upload' === $archive_notice ) : ?>
-					<div class="lk-alert lk-alert--error"><?php esc_html_e( 'Unable to upload file. Please try again.', 'lovekin' ); ?></div>
-				<?php endif; ?>
+			<?php if ( $archive_notice && isset( $notice_map[ $archive_notice ] ) ) : ?>
+				<div class="lk-alert <?php echo esc_attr( $notice_map[ $archive_notice ]['class'] ); ?>" data-lk-auto-hide="5000">
+					<?php echo esc_html( $notice_map[ $archive_notice ]['message'] ); ?>
+				</div>
 			<?php endif; ?>
 
 			<div class="lk-progress">
 				<div class="lk-progress-bar" style="width: <?php echo esc_attr( $usage_percent ); ?>%;"></div>
 			</div>
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" enctype="multipart/form-data" class="lk-upload">
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" enctype="multipart/form-data" class="lk-upload lk-archive-upload">
 				<input type="hidden" name="action" value="lk_upload_archive" />
 				<?php wp_nonce_field( 'lk_upload_archive' ); ?>
-				<input type="text" name="folder" placeholder="<?php esc_attr_e( 'Folder name (optional)', 'lovekin' ); ?>" />
-				<input type="file" name="archive_file" />
-				<button type="submit" class="lk-button"><?php esc_html_e( 'Upload', 'lovekin' ); ?></button>
+				<div class="lk-archive-upload-grid">
+					<div class="lk-field">
+						<label for="lk-archive-folder"><?php esc_html_e( 'Folder (optional)', 'lovekin' ); ?></label>
+						<input id="lk-archive-folder" type="text" name="folder" placeholder="<?php esc_attr_e( 'e.g. Sermons, School, Certificates', 'lovekin' ); ?>" />
+					</div>
+					<div class="lk-field">
+						<label><?php esc_html_e( 'Choose file', 'lovekin' ); ?></label>
+						<label class="lk-file-picker" data-lk="file-picker">
+							<input type="file" name="archive_file" accept="<?php echo esc_attr( $accept_attr ); ?>" required />
+							<span class="lk-file-picker-button"><?php esc_html_e( 'Browse', 'lovekin' ); ?></span>
+							<span class="lk-file-picker-name" data-lk="file-name"><?php esc_html_e( 'No file selected', 'lovekin' ); ?></span>
+						</label>
+						<span class="lk-help-text">
+							<?php
+							printf(
+								esc_html__( 'Allowed: %1$s. Max file size: %2$d MB. Remaining space: %3$s MB.', 'lovekin' ),
+								esc_html( $allowed_list ),
+								(int) $max_mb,
+								esc_html( number_format_i18n( $remaining_mb, 1 ) )
+							);
+							?>
+						</span>
+					</div>
+				</div>
+				<div class="lk-archive-upload-actions">
+					<button type="submit" class="lk-button"><?php esc_html_e( 'Upload to Archive', 'lovekin' ); ?></button>
+				</div>
 			</form>
 
-			<div class="lk-toolbar">
+			<div class="lk-toolbar lk-archive-toolbar">
 				<div class="lk-search">
 					<span class="dashicons dashicons-search"></span>
 					<input type="search" placeholder="<?php esc_attr_e( 'Search files', 'lovekin' ); ?>" data-lk="archive-search" />
@@ -1135,34 +1593,38 @@ class LoveKin_Shortcodes {
 					<?php foreach ( $folders as $folder_name ) : ?>
 						<option value="<?php echo esc_attr( $folder_name ); ?>"><?php echo esc_html( $folder_name ); ?></option>
 					<?php endforeach; ?>
-				</select>
-			</div>
+					</select>
+				</div>
 
-			<table class="lk-table">
-				<thead>
-					<tr>
-						<th><?php esc_html_e( 'File', 'lovekin' ); ?></th>
-						<th><?php esc_html_e( 'Folder', 'lovekin' ); ?></th>
-						<th><?php esc_html_e( 'Size', 'lovekin' ); ?></th>
-						<th><?php esc_html_e( 'Action', 'lovekin' ); ?></th>
-					</tr>
-				</thead>
-				<tbody>
-					<?php if ( empty( $files ) ) : ?>
-						<tr><td colspan="4"><?php esc_html_e( 'No files uploaded yet.', 'lovekin' ); ?></td></tr>
-					<?php else : ?>
-						<?php foreach ( $files as $file ) : ?>
-							<tr data-folder="<?php echo esc_attr( $file->folder ); ?>" data-name="<?php echo esc_attr( strtolower( $file->file_name ) ); ?>">
-								<td><?php echo esc_html( $file->file_name ); ?></td>
-								<td><?php echo esc_html( $file->folder ); ?></td>
-								<td><?php echo esc_html( number_format_i18n( $file->file_size / 1024, 1 ) ); ?> KB</td>
-								<td>
-									<a class="lk-button lk-button--ghost" href="<?php echo esc_url( add_query_arg( array( 'lk_archive_download' => $file->id ), home_url( '/' ) ) ); ?>"><?php esc_html_e( 'Download', 'lovekin' ); ?></a>
-									<a class="lk-button lk-button--danger" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=lk_delete_archive&file_id=' . $file->id ), 'lk_delete_archive' ) ); ?>"><?php esc_html_e( 'Delete', 'lovekin' ); ?></a>
-								</td>
-							</tr>
-						<?php endforeach; ?>
-					<?php endif; ?>
+				<table class="lk-table lk-table--archive">
+					<thead>
+						<tr>
+							<th><?php esc_html_e( 'File', 'lovekin' ); ?></th>
+							<th><?php esc_html_e( 'Folder', 'lovekin' ); ?></th>
+							<th><?php esc_html_e( 'Uploaded', 'lovekin' ); ?></th>
+							<th><?php esc_html_e( 'Size', 'lovekin' ); ?></th>
+							<th><?php esc_html_e( 'Action', 'lovekin' ); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php if ( empty( $files ) ) : ?>
+							<tr><td colspan="5"><?php esc_html_e( 'No files uploaded yet.', 'lovekin' ); ?></td></tr>
+						<?php else : ?>
+							<?php foreach ( $files as $file ) : ?>
+								<tr data-folder="<?php echo esc_attr( $file->folder ); ?>" data-name="<?php echo esc_attr( strtolower( $file->file_name ) ); ?>">
+									<td data-label="<?php esc_attr_e( 'File', 'lovekin' ); ?>"><?php echo esc_html( $file->file_name ); ?></td>
+									<td data-label="<?php esc_attr_e( 'Folder', 'lovekin' ); ?>"><?php echo esc_html( $file->folder ? $file->folder : __( 'Unfiled', 'lovekin' ) ); ?></td>
+									<td data-label="<?php esc_attr_e( 'Uploaded', 'lovekin' ); ?>"><?php echo esc_html( mysql2date( 'M j, Y', $file->created_at ) ); ?></td>
+									<td data-label="<?php esc_attr_e( 'Size', 'lovekin' ); ?>"><?php echo esc_html( number_format_i18n( $file->file_size / 1024, 1 ) ); ?> KB</td>
+									<td data-label="<?php esc_attr_e( 'Action', 'lovekin' ); ?>">
+										<div class="lk-table-actions">
+											<a class="lk-button lk-button--ghost" href="<?php echo esc_url( add_query_arg( array( 'lk_archive_download' => $file->id ), home_url( '/' ) ) ); ?>"><?php esc_html_e( 'Download', 'lovekin' ); ?></a>
+											<a class="lk-button lk-button--danger" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=lk_delete_archive&file_id=' . $file->id ), 'lk_delete_archive' ) ); ?>"><?php esc_html_e( 'Delete', 'lovekin' ); ?></a>
+										</div>
+									</td>
+								</tr>
+							<?php endforeach; ?>
+						<?php endif; ?>
 				</tbody>
 			</table>
 		</div>
@@ -1262,138 +1724,442 @@ class LoveKin_Shortcodes {
 		return $at_risk;
 	}
 
-	public static function render_login_form() {
+	public static function render_login_form( $atts = array() ) {
+		$atts = shortcode_atts( array(), $atts, 'lovekin_login' );
+		unset( $atts );
+
+		$notice       = self::get_auth_notice_message();
+		$error        = self::get_auth_error_message( 'login' );
+		$register_url = self::get_register_url();
+		$remember_me  = false;
+
 		if ( is_user_logged_in() ) {
-			wp_safe_redirect( self::get_dashboard_url() );
-			exit;
-		}
-
-		$error = '';
-		if ( 'POST' === $_SERVER['REQUEST_METHOD'] && isset( $_POST['lk_login_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['lk_login_nonce'] ) ), 'lk_login' ) ) {
-			$username = isset( $_POST['username'] ) ? sanitize_user( wp_unslash( $_POST['username'] ) ) : '';
-			$password = isset( $_POST['password'] ) ? (string) wp_unslash( $_POST['password'] ) : '';
-
-			$user = wp_signon(
-				array(
-					'user_login'    => $username,
-					'user_password' => $password,
-					'remember'      => true,
-				),
-				false
+			$dashboard_url = self::get_post_login_redirect_url( wp_get_current_user() );
+			return sprintf(
+				'<div class="lk-root lk-card lk-auth-inline"><p>%1$s</p><a class="lk-button lk-button--primary" href="%2$s">%3$s</a></div>',
+				esc_html__( 'You are already logged in.', 'lovekin' ),
+				esc_url( $dashboard_url ),
+				esc_html__( 'Go to Dashboard', 'lovekin' )
 			);
-
-			if ( is_wp_error( $user ) ) {
-				$error = $user->get_error_message();
-			} else {
-				wp_safe_redirect( self::get_dashboard_url() );
-				exit;
-			}
 		}
 
 		ob_start();
 		?>
-		<div class="lk-card lk-auth">
-			<h3><?php esc_html_e( 'Login', 'lovekin' ); ?></h3>
-			<?php if ( $error ) : ?>
-				<div class="lk-alert lk-alert--error"><?php echo esc_html( $error ); ?></div>
-			<?php endif; ?>
-			<form method="post" class="lk-form">
-				<label><?php esc_html_e( 'Username or Email', 'lovekin' ); ?></label>
-				<input type="text" name="username" required />
-				<label><?php esc_html_e( 'Password', 'lovekin' ); ?></label>
-				<input type="password" name="password" required />
-				<?php wp_nonce_field( 'lk_login', 'lk_login_nonce' ); ?>
-				<button type="submit" class="lk-button"><?php esc_html_e( 'Sign In', 'lovekin' ); ?></button>
-			</form>
+		<div class="lk-root lk-auth-shell" data-lk="auth-shell">
+			<div class="lk-card lk-auth-card">
+				<div class="lk-auth-header">
+					<p class="lk-eyebrow"><?php esc_html_e( 'LoveKin Portal', 'lovekin' ); ?></p>
+					<h3><?php esc_html_e( 'Welcome Back', 'lovekin' ); ?></h3>
+					<p class="lk-auth-subtitle"><?php esc_html_e( 'Sign in to access your dashboard, profile, and learning resources.', 'lovekin' ); ?></p>
+				</div>
+				<?php if ( $notice ) : ?>
+					<div class="lk-alert lk-alert--info" data-lk-auto-hide="5000"><?php echo esc_html( $notice ); ?></div>
+				<?php endif; ?>
+				<?php if ( $error ) : ?>
+					<div class="lk-alert lk-alert--error" data-lk-auto-hide="6000"><?php echo esc_html( $error ); ?></div>
+				<?php endif; ?>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="lk-form lk-auth-form" novalidate>
+					<input type="hidden" name="action" value="lk_login" />
+					<div class="lk-field">
+						<label for="lk-login-username"><?php esc_html_e( 'Username or Email', 'lovekin' ); ?></label>
+						<input id="lk-login-username" type="text" name="username" autocomplete="username" required />
+					</div>
+					<div class="lk-field">
+						<label for="lk-login-password"><?php esc_html_e( 'Password', 'lovekin' ); ?></label>
+						<input id="lk-login-password" type="password" name="password" autocomplete="current-password" required />
+					</div>
+					<div class="lk-auth-row">
+						<label class="lk-auth-checkbox">
+							<input type="checkbox" name="rememberme" value="1" <?php checked( $remember_me ); ?> />
+							<span><?php esc_html_e( 'Remember me', 'lovekin' ); ?></span>
+						</label>
+						<a class="lk-auth-link" href="<?php echo esc_url( add_query_arg( 'lk_auth', '1', wp_lostpassword_url( self::get_login_url() ) ) ); ?>"><?php esc_html_e( 'Forgot password?', 'lovekin' ); ?></a>
+					</div>
+					<?php wp_nonce_field( 'lk_login', 'lk_login_nonce' ); ?>
+					<button type="submit" class="lk-button lk-button--primary lk-auth-submit"><?php esc_html_e( 'Sign In', 'lovekin' ); ?></button>
+				</form>
+				<?php if ( $register_url ) : ?>
+					<p class="lk-auth-switch">
+						<?php esc_html_e( 'Need an account?', 'lovekin' ); ?>
+						<a href="<?php echo esc_url( $register_url ); ?>"><?php esc_html_e( 'Register', 'lovekin' ); ?></a>
+					</p>
+				<?php endif; ?>
+			</div>
 		</div>
 		<?php
 		return ob_get_clean();
 	}
 
-	public static function render_register_form() {
+	public static function render_register_form( $atts = array() ) {
+		$atts = shortcode_atts( array(), $atts, 'lovekin_register' );
+		unset( $atts );
+
+		$notice      = self::get_auth_notice_message();
+		$error       = self::get_auth_error_message( 'register' );
+		$form_values = array(
+			'first_name'   => '',
+			'last_name'    => '',
+			'username'     => '',
+			'email'        => '',
+			'phone_number' => '',
+			'occupation'   => '',
+			'city'         => '',
+			'state'        => '',
+			'country'      => '',
+		);
+
 		if ( is_user_logged_in() ) {
-			wp_safe_redirect( self::get_dashboard_url() );
-			exit;
+			$dashboard_url = self::get_post_login_redirect_url( wp_get_current_user() );
+			return sprintf(
+				'<div class="lk-root lk-card lk-auth-inline"><p>%1$s</p><a class="lk-button lk-button--primary" href="%2$s">%3$s</a></div>',
+				esc_html__( 'You are already logged in.', 'lovekin' ),
+				esc_url( $dashboard_url ),
+				esc_html__( 'Go to Dashboard', 'lovekin' )
+			);
 		}
 
-		$error = '';
-		if ( 'POST' === $_SERVER['REQUEST_METHOD'] && isset( $_POST['lk_register_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['lk_register_nonce'] ) ), 'lk_register' ) ) {
-			$username = isset( $_POST['username'] ) ? sanitize_user( wp_unslash( $_POST['username'] ) ) : '';
-			$email    = isset( $_POST['email'] ) ? sanitize_email( wp_unslash( $_POST['email'] ) ) : '';
-			$password = isset( $_POST['password'] ) ? (string) wp_unslash( $_POST['password'] ) : '';
-			$first    = isset( $_POST['first_name'] ) ? sanitize_text_field( wp_unslash( $_POST['first_name'] ) ) : '';
-			$last     = isset( $_POST['last_name'] ) ? sanitize_text_field( wp_unslash( $_POST['last_name'] ) ) : '';
-
-			if ( empty( $username ) || empty( $email ) || empty( $password ) ) {
-				$error = __( 'Please complete all required fields.', 'lovekin' );
-			} elseif ( username_exists( $username ) || email_exists( $email ) ) {
-				$error = __( 'User already exists with those details.', 'lovekin' );
-			} else {
-				$user_id = wp_insert_user(
-					array(
-						'user_login'   => $username,
-						'user_email'   => $email,
-						'user_pass'    => $password,
-						'first_name'   => $first,
-						'last_name'    => $last,
-						'display_name' => trim( $first . ' ' . $last ),
-						'role'         => 'lk_secondary',
-					)
-				);
-
-				if ( is_wp_error( $user_id ) ) {
-					$error = $user_id->get_error_message();
-				} else {
-					wp_set_current_user( $user_id );
-					wp_set_auth_cookie( $user_id );
-					self::ensure_membership_code( $user_id );
-					wp_safe_redirect( self::get_dashboard_url() );
-					exit;
-				}
-			}
-		}
-
+		$login_url = self::get_login_url();
 		ob_start();
 		?>
-		<div class="lk-card lk-auth">
-			<h3><?php esc_html_e( 'Register', 'lovekin' ); ?></h3>
-			<?php if ( $error ) : ?>
-				<div class="lk-alert lk-alert--error"><?php echo esc_html( $error ); ?></div>
-			<?php endif; ?>
-			<form method="post" class="lk-form">
-				<label><?php esc_html_e( 'First Name', 'lovekin' ); ?></label>
-				<input type="text" name="first_name" />
-				<label><?php esc_html_e( 'Last Name', 'lovekin' ); ?></label>
-				<input type="text" name="last_name" />
-				<label><?php esc_html_e( 'Username', 'lovekin' ); ?></label>
-				<input type="text" name="username" required />
-				<label><?php esc_html_e( 'Email', 'lovekin' ); ?></label>
-				<input type="email" name="email" required />
-				<label><?php esc_html_e( 'Password', 'lovekin' ); ?></label>
-				<input type="password" name="password" required />
-				<?php wp_nonce_field( 'lk_register', 'lk_register_nonce' ); ?>
-				<button type="submit" class="lk-button"><?php esc_html_e( 'Create Account', 'lovekin' ); ?></button>
-			</form>
+		<div class="lk-root lk-auth-shell" data-lk="auth-shell">
+			<div class="lk-card lk-auth-card lk-auth-card--register">
+				<div class="lk-auth-header">
+					<p class="lk-eyebrow"><?php esc_html_e( 'LoveKin Portal', 'lovekin' ); ?></p>
+					<h3><?php esc_html_e( 'Create Account', 'lovekin' ); ?></h3>
+					<p class="lk-auth-subtitle"><?php esc_html_e( 'Register as a secondary member to get started.', 'lovekin' ); ?></p>
+				</div>
+				<?php if ( $notice ) : ?>
+					<div class="lk-alert lk-alert--info" data-lk-auto-hide="5000"><?php echo esc_html( $notice ); ?></div>
+				<?php endif; ?>
+				<?php if ( $error ) : ?>
+					<div class="lk-alert lk-alert--error" data-lk-auto-hide="6000"><?php echo esc_html( $error ); ?></div>
+				<?php endif; ?>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="lk-form lk-auth-form" novalidate>
+					<input type="hidden" name="action" value="lk_register" />
+					<div class="lk-field-grid">
+						<div class="lk-field">
+							<label for="lk-register-first-name"><?php esc_html_e( 'First Name', 'lovekin' ); ?></label>
+							<input id="lk-register-first-name" type="text" name="first_name" value="<?php echo esc_attr( $form_values['first_name'] ); ?>" autocomplete="given-name" required />
+						</div>
+						<div class="lk-field">
+							<label for="lk-register-last-name"><?php esc_html_e( 'Last Name', 'lovekin' ); ?></label>
+							<input id="lk-register-last-name" type="text" name="last_name" value="<?php echo esc_attr( $form_values['last_name'] ); ?>" autocomplete="family-name" required />
+						</div>
+					</div>
+					<div class="lk-field-grid">
+						<div class="lk-field">
+							<label for="lk-register-username"><?php esc_html_e( 'Username', 'lovekin' ); ?></label>
+							<input id="lk-register-username" type="text" name="username" value="<?php echo esc_attr( $form_values['username'] ); ?>" autocomplete="username" required />
+						</div>
+						<div class="lk-field">
+							<label for="lk-register-email"><?php esc_html_e( 'Email', 'lovekin' ); ?></label>
+							<input id="lk-register-email" type="email" name="email" value="<?php echo esc_attr( $form_values['email'] ); ?>" autocomplete="email" required />
+						</div>
+					</div>
+					<div class="lk-field-grid">
+						<div class="lk-field">
+							<label for="lk-register-phone"><?php esc_html_e( 'Phone Number', 'lovekin' ); ?></label>
+							<input id="lk-register-phone" type="tel" name="phone_number" value="<?php echo esc_attr( $form_values['phone_number'] ); ?>" autocomplete="tel" required />
+						</div>
+						<div class="lk-field">
+							<label for="lk-register-occupation"><?php esc_html_e( 'Occupation', 'lovekin' ); ?></label>
+							<input id="lk-register-occupation" type="text" name="occupation" value="<?php echo esc_attr( $form_values['occupation'] ); ?>" required />
+						</div>
+					</div>
+					<div class="lk-field-grid">
+						<div class="lk-field">
+							<label for="lk-register-city"><?php esc_html_e( 'City', 'lovekin' ); ?></label>
+							<input id="lk-register-city" type="text" name="city" value="<?php echo esc_attr( $form_values['city'] ); ?>" autocomplete="address-level2" required />
+						</div>
+						<div class="lk-field">
+							<label for="lk-register-state"><?php esc_html_e( 'State', 'lovekin' ); ?></label>
+							<input id="lk-register-state" type="text" name="state" value="<?php echo esc_attr( $form_values['state'] ); ?>" autocomplete="address-level1" required />
+						</div>
+						<div class="lk-field">
+							<label for="lk-register-country"><?php esc_html_e( 'Country', 'lovekin' ); ?></label>
+							<input id="lk-register-country" type="text" name="country" value="<?php echo esc_attr( $form_values['country'] ); ?>" autocomplete="country-name" required />
+						</div>
+					</div>
+					<div class="lk-field-grid">
+						<div class="lk-field">
+							<label for="lk-register-password"><?php esc_html_e( 'Password', 'lovekin' ); ?></label>
+							<input id="lk-register-password" type="password" name="password" autocomplete="new-password" required />
+							<span class="lk-help-text"><?php esc_html_e( 'Minimum 8 characters, include letters and numbers.', 'lovekin' ); ?></span>
+						</div>
+						<div class="lk-field">
+							<label for="lk-register-confirm-password"><?php esc_html_e( 'Confirm Password', 'lovekin' ); ?></label>
+							<input id="lk-register-confirm-password" type="password" name="confirm_password" autocomplete="new-password" required />
+						</div>
+					</div>
+					<?php wp_nonce_field( 'lk_register', 'lk_register_nonce' ); ?>
+					<button type="submit" class="lk-button lk-button--primary lk-auth-submit"><?php esc_html_e( 'Create Account', 'lovekin' ); ?></button>
+				</form>
+				<?php if ( $login_url ) : ?>
+					<p class="lk-auth-switch">
+						<?php esc_html_e( 'Already have an account?', 'lovekin' ); ?>
+						<a href="<?php echo esc_url( $login_url ); ?>"><?php esc_html_e( 'Sign in', 'lovekin' ); ?></a>
+					</p>
+				<?php endif; ?>
+			</div>
 		</div>
 		<?php
 		return ob_get_clean();
 	}
 
 	private static function get_dashboard_url() {
+		$configured_url = self::get_configured_auth_page_url( 'dashboard_page_id' );
+		if ( $configured_url ) {
+			return $configured_url;
+		}
+
+		$fallback_url = self::get_page_url_by_shortcode( 'lovekin_dashboard' );
+		return $fallback_url ? $fallback_url : home_url( '/' );
+	}
+
+	private static function get_login_url() {
+		$configured_url = self::get_configured_auth_page_url( 'login_page_id' );
+		if ( $configured_url ) {
+			return $configured_url;
+		}
+
+		$fallback_url = self::get_page_url_by_shortcode( 'lovekin_login' );
+		return $fallback_url ? $fallback_url : wp_login_url();
+	}
+
+	private static function get_register_url() {
+		$configured_url = self::get_configured_auth_page_url( 'register_page_id' );
+		if ( $configured_url ) {
+			return $configured_url;
+		}
+
+		$fallback_url = self::get_page_url_by_shortcode( 'lovekin_register' );
+		return $fallback_url ? $fallback_url : wp_registration_url();
+	}
+
+	private static function get_configured_auth_page_id( $setting_key ) {
+		$settings = get_option( 'lovekin_auth_settings', array() );
+		if ( ! is_array( $settings ) ) {
+			return 0;
+		}
+
+		$page_id = isset( $settings[ $setting_key ] ) ? absint( $settings[ $setting_key ] ) : 0;
+		if ( ! $page_id ) {
+			return 0;
+		}
+
+		$page = get_post( $page_id );
+		if ( ! $page || 'page' !== $page->post_type || 'publish' !== $page->post_status ) {
+			return 0;
+		}
+
+		return $page_id;
+	}
+
+	private static function get_configured_auth_page_url( $setting_key ) {
+		$page_id = self::get_configured_auth_page_id( $setting_key );
+		if ( ! $page_id ) {
+			return '';
+		}
+
+		$url = get_permalink( $page_id );
+		return $url ? $url : '';
+	}
+
+	private static function get_page_url_by_shortcode( $shortcode ) {
+		static $cache = array();
+		$shortcode = sanitize_key( $shortcode );
+		if ( isset( $cache[ $shortcode ] ) ) {
+			return $cache[ $shortcode ];
+		}
+
 		$pages = get_posts(
 			array(
 				'post_type'      => 'page',
 				'post_status'    => 'publish',
-				'posts_per_page' => 100,
+				'posts_per_page' => 250,
 			)
 		);
+
 		foreach ( $pages as $page ) {
-			if ( has_shortcode( $page->post_content, 'lovekin_dashboard' ) ) {
+			if ( has_shortcode( $page->post_content, $shortcode ) ) {
 				$url = get_permalink( $page->ID );
-				return $url ? $url : home_url( '/' );
+				$cache[ $shortcode ] = $url ? $url : '';
+				return $cache[ $shortcode ];
 			}
 		}
-		return home_url( '/' );
+
+		$cache[ $shortcode ] = '';
+		return '';
+	}
+
+	private static function get_safe_redirect_url( $url, $fallback = '' ) {
+		$url = is_string( $url ) ? trim( $url ) : '';
+		if ( '' === $url ) {
+			return $fallback;
+		}
+
+		if ( 0 === strpos( $url, '/' ) ) {
+			$home_url_parts = wp_parse_url( home_url( '/' ) );
+			$home_path      = isset( $home_url_parts['path'] ) ? rtrim( (string) $home_url_parts['path'], '/' ) : '';
+			if ( $home_path && 0 === strpos( $url, $home_path . '/' ) ) {
+				$scheme = isset( $home_url_parts['scheme'] ) ? $home_url_parts['scheme'] : ( is_ssl() ? 'https' : 'http' );
+				$host   = $home_url_parts['host'] ?? '';
+				$port   = isset( $home_url_parts['port'] ) ? ':' . (int) $home_url_parts['port'] : '';
+				if ( $host ) {
+					$url = $scheme . '://' . $host . $port . $url;
+				} else {
+					$url = home_url( $url );
+				}
+			} else {
+				$url = home_url( $url );
+			}
+		}
+
+		$safe_url = wp_validate_redirect( $url, '' );
+		if ( ! $safe_url ) {
+			return $fallback;
+		}
+
+		$home_host = wp_parse_url( home_url( '/' ), PHP_URL_HOST );
+		$safe_host = wp_parse_url( $safe_url, PHP_URL_HOST );
+		if ( $home_host && $safe_host && strtolower( $home_host ) !== strtolower( $safe_host ) ) {
+			return $fallback;
+		}
+
+		return $safe_url;
+	}
+
+	private static function get_post_login_redirect_url( $user = null ) {
+		$default = self::get_dashboard_url();
+		$filtered = apply_filters( 'lovekin_login_redirect_url', $default, $user );
+		return self::get_safe_redirect_url( $filtered, $default );
+	}
+
+	private static function get_post_registration_redirect_url( $user = null ) {
+		$default = self::get_login_url();
+		$filtered = apply_filters( 'lovekin_registration_redirect_url', $default, $user );
+		return self::get_safe_redirect_url( $filtered, $default );
+	}
+
+	private static function urls_share_path( $left, $right ) {
+		$left  = self::get_safe_redirect_url( $left, '' );
+		$right = self::get_safe_redirect_url( $right, '' );
+		if ( ! $left || ! $right ) {
+			return false;
+		}
+
+		$left_parts  = wp_parse_url( $left );
+		$right_parts = wp_parse_url( $right );
+		if ( ! is_array( $left_parts ) || ! is_array( $right_parts ) ) {
+			return false;
+		}
+
+		$left_host  = isset( $left_parts['host'] ) ? strtolower( (string) $left_parts['host'] ) : '';
+		$right_host = isset( $right_parts['host'] ) ? strtolower( (string) $right_parts['host'] ) : '';
+		if ( $left_host !== $right_host ) {
+			return false;
+		}
+
+		$left_path  = isset( $left_parts['path'] ) ? untrailingslashit( (string) $left_parts['path'] ) : '';
+		$right_path = isset( $right_parts['path'] ) ? untrailingslashit( (string) $right_parts['path'] ) : '';
+		return $left_path === $right_path;
+	}
+
+	private static function get_default_registration_role() {
+		$default_role = apply_filters( 'lovekin_registration_default_role', 'lk_secondary' );
+		if ( ! is_string( $default_role ) || ! get_role( $default_role ) ) {
+			$default_role = get_role( 'lk_secondary' ) ? 'lk_secondary' : 'subscriber';
+		}
+		return $default_role;
+	}
+
+	private static function get_current_request_url() {
+		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : '/';
+		$request_uri = '/' . ltrim( (string) $request_uri, '/' );
+		$scheme = is_ssl() ? 'https' : 'http';
+		$host = isset( $_SERVER['HTTP_HOST'] ) ? wp_unslash( $_SERVER['HTTP_HOST'] ) : wp_parse_url( home_url( '/' ), PHP_URL_HOST );
+		if ( ! $host ) {
+			return home_url( '/' );
+		}
+
+		return self::get_safe_redirect_url( $scheme . '://' . $host . $request_uri, home_url( '/' ) );
+	}
+
+	private static function build_login_url_with_notice( $notice = '' ) {
+		$login_url = self::get_login_url();
+		if ( $notice ) {
+			$login_url = add_query_arg( 'lk_notice', sanitize_key( $notice ), $login_url );
+		}
+		return $login_url;
+	}
+
+	private static function add_auth_query_args( $url, $args = array() ) {
+		$clean_args = array();
+		foreach ( (array) $args as $key => $value ) {
+			if ( null === $value || '' === $value ) {
+				continue;
+			}
+			$clean_args[ sanitize_key( (string) $key ) ] = sanitize_text_field( (string) $value );
+		}
+		if ( empty( $clean_args ) ) {
+			return $url;
+		}
+		return add_query_arg( $clean_args, $url );
+	}
+
+	private static function get_auth_notice_message() {
+		$notice = isset( $_GET['lk_notice'] ) ? sanitize_key( wp_unslash( $_GET['lk_notice'] ) ) : '';
+		switch ( $notice ) {
+			case 'login_required':
+				return __( 'Please log in to access that page.', 'lovekin' );
+			case 'logged_out':
+				return __( 'You have been logged out successfully.', 'lovekin' );
+			case 'registered':
+				return __( 'Registration successful. Please sign in with your new account.', 'lovekin' );
+			default:
+				return '';
+		}
+	}
+
+	private static function get_auth_error_message( $context = '' ) {
+		$error = isset( $_GET['lk_error'] ) ? sanitize_key( wp_unslash( $_GET['lk_error'] ) ) : '';
+		if ( ! $error ) {
+			return '';
+		}
+
+		if ( 'login' === $context ) {
+			switch ( $error ) {
+				case 'missing_credentials':
+					return __( 'Please enter your username/email and password.', 'lovekin' );
+				case 'invalid_request':
+					return __( 'Invalid request. Please try again.', 'lovekin' );
+				case 'invalid_login':
+				default:
+					return __( 'Invalid login credentials. Please try again or reset your password.', 'lovekin' );
+			}
+		}
+
+		if ( 'register' === $context ) {
+			switch ( $error ) {
+				case 'required_fields':
+					return __( 'Please complete all required fields.', 'lovekin' );
+				case 'invalid_username':
+					return __( 'Please enter a valid username (at least 4 characters).', 'lovekin' );
+				case 'invalid_email':
+					return __( 'Please enter a valid email address.', 'lovekin' );
+				case 'weak_password':
+					return __( 'Password must be at least 8 characters and include letters and numbers.', 'lovekin' );
+				case 'password_mismatch':
+					return __( 'Passwords do not match.', 'lovekin' );
+				case 'invalid_request':
+					return __( 'Invalid request. Please try again.', 'lovekin' );
+				case 'register_failed':
+				default:
+					return __( 'We could not create your account with those details. Please review your information and try again.', 'lovekin' );
+			}
+		}
+
+		return '';
 	}
 
 	private static function ensure_membership_code( $user_id ) {
@@ -1422,6 +2188,12 @@ class LoveKin_Shortcodes {
 	}
 
 	private static function render_login_prompt() {
-		return '<div class="lk-card">' . esc_html__( 'Please log in to access this feature.', 'lovekin' ) . '</div>';
+		$login_url = self::build_login_url_with_notice( 'login_required' );
+		return sprintf(
+			'<div class="lk-root lk-card lk-auth-inline"><p>%1$s</p><a class="lk-button lk-button--primary" href="%2$s">%3$s</a></div>',
+			esc_html__( 'Please log in to access this feature.', 'lovekin' ),
+			esc_url( $login_url ),
+			esc_html__( 'Go to Login', 'lovekin' )
+		);
 	}
 }

@@ -114,3 +114,85 @@
 .lk-admin-report-page .lk-root.lk-report {
 	margin-top: 16px;
 }
+
+.lk-doc-admin .lk-doc-admin-card {
+	border-radius: 14px;
+	padding: 18px;
+}
+
+.lk-doc-admin-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 10px;
+	margin-bottom: 14px;
+}
+
+.lk-doc-admin-head h2 {
+	margin: 0;
+	font-size: 20px;
+}
+
+.lk-doc-admin-meta {
+	color: #64748b;
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.03em;
+}
+
+.lk-doc-admin-form {
+	display: grid;
+	gap: 12px;
+}
+
+.lk-doc-admin-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 12px;
+}
+
+.lk-doc-admin-field label {
+	display: block;
+	font-weight: 600;
+	margin-bottom: 6px;
+}
+
+.lk-doc-admin-file input[type="file"] {
+	display: block;
+	margin-bottom: 6px;
+}
+
+.lk-doc-admin-actions {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.lk-doc-admin-table td .description {
+	margin-top: 6px;
+}
+
+.lk-doc-admin-table td:last-child {
+	white-space: nowrap;
+}
+
+.lk-doc-admin-table td:last-child .button + .button {
+	margin-left: 8px;
+}
+
+@media (max-width: 782px) {
+	.lk-doc-admin-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.lk-doc-admin-head {
+		flex-direction: column;
+		align-items: flex-start;
+	}
+
+	.lk-doc-admin-table td:last-child .button + .button {
+		margin-left: 0;
+		margin-top: 6px;
+		display: inline-block;
+	}
+}
